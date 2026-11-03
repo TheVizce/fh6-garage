@@ -311,7 +311,7 @@
     const tb = $('#tabGarage tbody');
     let arr = daten.eintraege.filter(e => {
       const a = autoVon(e);
-      if (!passtAuto(a, norm([e.build, e.notiz, e.reifen, e.antrieb, e.code].join(' ')))) return false;
+      if (!passtAuto(a, norm([e.build, e.design, e.notiz, e.reifen, e.antrieb, e.code].join(' ')))) return false;
       if (f.klasse.value && klasseVonPi(e.pi ?? a.pi) !== f.klasse.value) return false;
       if (f.reifen.value && e.reifen !== f.reifen.value) return false;
       if (f.antrieb.value && e.antrieb !== f.antrieb.value) return false;
@@ -337,7 +337,7 @@
       const a = autoVon(e);
       return `<tr data-uid="${esc(e.uid)}">
         <td class="stern">${e.fav ? '★' : ''}</td>
-        <td class="name"><b>${nameHtml(a)}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}</td>
+        <td class="name"><b>${nameHtml(a)}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}${e.design ? `<span class="design" title="Design / Lackierung">🎨 ${esc(e.design)}</span>` : ''}</td>
         <td class="mob-weg">${esc(a.l || '')}</td>
         <td class="mob-weg leise">${esc(a.t || '')}</td>
         <td class="mob-weg">${badge(a.pi, a.k)}</td>
@@ -417,7 +417,7 @@
   const dlg = $('#dlgEintrag');
   const e = {
     suche: $('#eAutoSuche'), treffer: $('#autoTreffer'), info: $('#eAutoInfo'), eigenesBtn: $('#eEigenesBtn'), eigenes: $('#eEigenes'),
-    build: $('#eBuild'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
+    build: $('#eBuild'), design: $('#eDesign'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
     reifen: $('#eReifen'), antrieb: $('#eAntrieb'), kw: $('#eKw'), kg: $('#eKg'), nm: $('#eNm'),
     code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'),
     xMarke: $('#xMarke'), xName: $('#xName'), xLand: $('#xLand'), xTyp: $('#xTyp'), xPi: $('#xPi')
@@ -501,6 +501,7 @@
         e.xMarke.value = s.m || ''; e.xName.value = s.n || ''; e.xLand.value = s.l || ''; e.xTyp.value = s.t || ''; e.xPi.value = s.pi ?? '';
       }
       e.build.value = eintrag.build || '';
+      e.design.value = eintrag.design || '';
       ZAHLFELDER.forEach(k => { e[k].value = eintrag[k] ?? ''; });
       e.reifen.value = eintrag.reifen || ''; e.antrieb.value = eintrag.antrieb || '';
       e.code.value = eintrag.code || ''; e.notiz.value = eintrag.notiz || ''; e.fav.checked = !!eintrag.fav;
@@ -527,7 +528,7 @@
       snap = { m, n, j, l, t, pi, k };
     }
     const r = {
-      autoId, auto: snap, build: e.build.value.trim(),
+      autoId, auto: snap, build: e.build.value.trim(), design: e.design.value.trim(),
       reifen: e.reifen.value, antrieb: e.antrieb.value,
       code: e.code.value.trim(), notiz: e.notiz.value.trim(), fav: e.fav.checked
     };

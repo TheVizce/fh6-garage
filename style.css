@@ -94,6 +94,8 @@ table.liste { width: 100%; border-collapse: collapse; }
 .name b { display: block; font-weight: 600; }
 .name small { color: var(--leise); }
 .build { color: var(--akzent2); font-size: 13px; }
+.design { display: block; color: var(--leise); font-size: 13px; }
+.build + .design { margin-top: 1px; }
 .leise { color: var(--leise); }
 .stern { color: #ffd34d; width: 20px; }
 td.leer-wert { color: var(--linie); }
