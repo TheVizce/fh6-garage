@@ -18,10 +18,10 @@
   const BEZUG = { Autoshow: 'Autohändler', Wheelspin: 'Wheelspin', Seasonal: 'Saison', 'Collection Journal': 'Sammeljournal', 'Autoshow DLC': 'Autohändler (DLC)', Treasure: 'Schatz', Loyalty: 'Treuebonus', Aftermarket: 'Aftermarket', 'Barn Find': 'Scheunenfund' };
 
   const SORT_GARAGE = [
-    ['neu', 'Zuletzt bearbeitet'], ['name', 'Name A–Z'], ['jahr', 'Baujahr'], ['pi', 'PI (hoch → niedrig)'],
+    ['neu', 'Zuletzt bearbeitet'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
     ['vmax', 'Höchstgeschw.'], ['a100', '0–100 (schnellste)'], ['ps', 'Leistung'], ['kg', 'Gewicht (leicht)']
   ];
-  const SORT_KATALOG = [['name', 'Name A–Z'], ['jahr', 'Baujahr'], ['pi', 'PI Serie'], ['besitz', 'In Garage zuerst']];
+  const SORT_KATALOG = [['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI Serie'], ['besitz', 'In Garage zuerst']];
 
   /* ---------- Hilfen ---------- */
   const $ = (s, el = document) => el.querySelector(s);
@@ -32,6 +32,13 @@
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const zahl = v => { if (v === '' || v == null) return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) ? n : null; };
   const fmt = (n, d = 0) => n == null ? '' : n.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // Name ohne vorangestelltes Baujahr ("1998 Toyota Supra RZ" → "Toyota Supra RZ")
+  const modell = a => String((a && a.n) || '').replace(/^\d{4}\s+/, '');
+  const jahrVon = a => (a && a.j) || Number(String((a && a.n) || '').slice(0, 4)) || 0;
+  const nachModell = (x, y) => modell(x).localeCompare(modell(y), 'de') || jahrVon(x) - jahrVon(y);
+  const nachJahr = (x, y) => jahrVon(x) - jahrVon(y) || modell(x).localeCompare(modell(y), 'de');
+  const nameHtml = a => `${esc(modell(a) || '?')}${jahrVon(a) ? ` <span class="jahr">${jahrVon(a)}</span>` : ''}`;
 
   function klasseVonPi(pi) {
     if (pi == null) return '';
@@ -209,8 +216,8 @@
     const s = ui.sortG, nv = v => v ?? -Infinity;
     const cmp = {
       neu: (x, y) => (y.geaendert || '').localeCompare(x.geaendert || ''),
-      name: (x, y) => autoVon(x).n.localeCompare(autoVon(y).n, 'de') || (x.build || '').localeCompare(y.build || '', 'de'),
-      jahr: (x, y) => (autoVon(x).j || 0) - (autoVon(y).j || 0),
+      name: (x, y) => nachModell(autoVon(x), autoVon(y)) || (x.build || '').localeCompare(y.build || '', 'de'),
+      jahr: (x, y) => nachJahr(autoVon(x), autoVon(y)) || (x.build || '').localeCompare(y.build || '', 'de'),
       pi: (x, y) => nv(y.pi ?? autoVon(y).pi) - nv(x.pi ?? autoVon(x).pi),
       vmax: (x, y) => nv(y.vmax) - nv(x.vmax),
       a100: (x, y) => (x.a100 ?? Infinity) - (y.a100 ?? Infinity),
@@ -224,7 +231,7 @@
       const a = autoVon(e);
       return `<tr data-uid="${esc(e.uid)}">
         <td class="stern">${e.fav ? '★' : ''}</td>
-        <td class="name"><b>${esc(a.n || '?')}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}</td>
+        <td class="name"><b>${nameHtml(a)}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}</td>
         <td class="mob-weg">${esc(a.l || '')}</td>
         <td class="mob-weg leise">${esc(a.t || '')}</td>
         <td class="mob-weg">${badge(a.pi, a.k)}</td>
@@ -251,10 +258,10 @@
       return true;
     });
     const cmp = {
-      name: (x, y) => x.n.localeCompare(y.n, 'de'),
-      jahr: (x, y) => (x.j || 0) - (y.j || 0),
+      name: nachModell,
+      jahr: nachJahr,
       pi: (x, y) => (y.pi || 0) - (x.pi || 0),
-      besitz: (x, y) => (anz.get(y.id) || 0) - (anz.get(x.id) || 0) || x.n.localeCompare(y.n, 'de')
+      besitz: (x, y) => (anz.get(y.id) || 0) - (anz.get(x.id) || 0) || nachModell(x, y)
     }[ui.sortK] || (() => 0);
     arr.sort(cmp);
     const gesamt = arr.length;
@@ -262,7 +269,7 @@
     $('#tabKatalog tbody').innerHTML = arr.map(a => {
       const n = anz.get(a.id) || 0;
       return `<tr data-auto="${esc(a.id)}">
-        <td class="name"><b>${esc(a.n)}</b><small>${esc(a.m)}</small></td>
+        <td class="name"><b>${nameHtml(a)}</b></td>
         <td class="mob-weg">${esc(a.l)}</td>
         <td data-l="Typ" class="leise">${esc(a.t)}</td>
         <td class="klassen">${badge(a.pi, a.k)}</td>

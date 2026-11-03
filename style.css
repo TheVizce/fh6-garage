@@ -220,3 +220,6 @@ textarea#listeEingabe { width: 100%; }
   .liste td.mob-weg { display: none; }
   .liste td.leer-wert { display: none; }
 }
+
+/* Baujahr hinter dem Modellnamen */
+.name .jahr { font-weight: 500; color: var(--leise); font-size: .9em; margin-left: 4px; font-variant-numeric: tabular-nums; }
