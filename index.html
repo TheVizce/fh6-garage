@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🏎️%3C/text%3E%3C/svg%3E">
+<title>FH6 Garage</title>
+<meta name="theme-color" content="#14111c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="kopf">
+  <div class="marke">
+    <span class="logo">FH6</span>
+    <div>
+      <h1>Garage</h1>
+      <p id="statZeile" class="statzeile">Lade Fahrzeugliste …</p>
+    </div>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab aktiv" data-tab="garage" role="tab">Meine Garage</button>
+    <button class="tab" data-tab="katalog" role="tab">Katalog</button>
+  </nav>
+  <div class="kopf-aktionen">
+    <button id="btnNeu" class="btn primaer">+ Fahrzeug</button>
+    <button id="btnEinst" class="btn icon" title="Daten &amp; Einstellungen" aria-label="Daten und Einstellungen">⚙</button>
+  </div>
+</header>
+
+<div id="fehler" class="fehler" hidden></div>
+
+<main>
+  <section class="filter">
+    <input id="fSuche" type="search" placeholder="Suchen: Marke, Modell, Build, Notiz …" autocomplete="off">
+    <select id="fKlasse"><option value="">Alle Klassen</option></select>
+    <select id="fLand"><option value="">Alle Länder</option></select>
+    <select id="fTyp"><option value="">Alle Typen</option></select>
+    <select id="fReifen" class="nur-garage"><option value="">Alle Reifen</option></select>
+    <select id="fAntrieb" class="nur-garage"><option value="">Jeder Antrieb</option></select>
+    <select id="fBesitz" class="nur-katalog">
+      <option value="">Alle Fahrzeuge</option>
+      <option value="ja">Nur in Garage</option>
+      <option value="nein">Nicht in Garage</option>
+    </select>
+    <select id="fSort"></select>
+    <label class="chk nur-garage"><input id="fFav" type="checkbox"> ★ Favoriten</label>
+  </section>
+
+  <section id="ansichtGarage">
+    <div class="tabelle-wrap">
+      <table class="liste" id="tabGarage">
+        <thead><tr>
+          <th></th><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Upgrade</th>
+          <th class="zahl">km/h</th><th class="zahl">0–100</th><th class="zahl">PS</th><th class="zahl">kg</th><th>Reifen</th><th>Antrieb</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="leerGarage" class="leer" hidden>
+      <p>Noch keine Fahrzeuge in deiner Garage.</p>
+      <p>Füge eins über <b>+ Fahrzeug</b> hinzu oder suche im <b>Katalog</b>.</p>
+    </div>
+  </section>
+
+  <section id="ansichtKatalog" hidden>
+    <div class="tabelle-wrap">
+      <table class="liste" id="tabKatalog">
+        <thead><tr><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Bezug</th><th class="zahl">Garage</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="mehrKatalog" class="hinweis"></p>
+  </section>
+</main>
+
+<!-- Fahrzeug bearbeiten -->
+<dialog id="dlgEintrag" class="dlg">
+  <form method="dialog" id="formEintrag" autocomplete="off">
+    <header class="dlg-kopf">
+      <h2 id="dlgTitel">Fahrzeug hinzufügen</h2>
+      <button type="button" class="btn icon" data-schliessen aria-label="Schließen">✕</button>
+    </header>
+
+    <div class="dlg-inhalt">
+      <div id="ocrZone" class="ocr-zone" tabindex="0">
+        <input id="ocrDatei" type="file" accept="image/*" hidden>
+        <div class="ocr-text">
+          <b>Screenshot einlesen</b>
+          <span>Bild hierher ziehen, mit Strg+V einfügen oder <button type="button" class="link" id="ocrWaehlen">Datei wählen</button></span>
+        </div>
+        <div id="ocrStatus" class="ocr-status"></div>
+      </div>
+      <details id="ocrRoh" class="ocr-roh" hidden><summary>Erkannter Text</summary><pre></pre></details>
+
+      <div class="feld voll auto-wahl">
+        <label for="eAutoSuche">Fahrzeug</label>
+        <input id="eAutoSuche" type="search" placeholder="Modell suchen …">
+        <ul id="autoTreffer" class="treffer" hidden></ul>
+        <div id="eAutoInfo" class="auto-info"></div>
+        <button type="button" class="link" id="eEigenesBtn">Fahrzeug nicht in der Liste? Eigenes anlegen</button>
+      </div>
+
+      <fieldset id="eEigenes" class="eigenes" hidden>
+        <legend>Eigenes Fahrzeug</legend>
+        <div class="raster">
+          <div class="feld"><label>Marke</label><input id="xMarke"></div>
+          <div class="feld"><label>Modell (mit Jahr)</label><input id="xName" placeholder="z. B. 1998 Toyota Supra RZ"></div>
+          <div class="feld"><label>Land</label><input id="xLand"></div>
+          <div class="feld"><label>Typ</label><input id="xTyp"></div>
+          <div class="feld"><label>PI Serie</label><input id="xPi" type="number" min="100" max="999"></div>
+        </div>
+      </fieldset>
+
+      <div class="raster">
+        <div class="feld voll"><label for="eBuild">Build-Name <small>(optional)</small></label><input id="eBuild" placeholder="z. B. Drift, S1 Straße, Serie"></div>
+        <div class="feld"><label for="ePi">PI nach Upgrade</label>
+          <div class="mit-badge"><input id="ePi" type="number" min="100" max="999" inputmode="numeric"><span id="ePiBadge" class="badge"></span></div>
+        </div>
+        <div class="feld"><label for="eVmax">Höchstgeschw. <small>km/h</small></label><input id="eVmax" type="number" step="0.1" min="0" inputmode="decimal"></div>
+        <div class="feld"><label for="eA100">0–100 km/h <small>s</small></label><input id="eA100" type="number" step="0.001" min="0" inputmode="decimal"></div>
+        <div class="feld"><label for="eReifen">Reifen</label><select id="eReifen"></select></div>
+        <div class="feld"><label for="eAntrieb">Antrieb</label><select id="eAntrieb"></select></div>
+        <div class="feld"><label for="ePs">Leistung <small>PS</small></label><input id="ePs" type="number" min="0" inputmode="numeric"></div>
+        <div class="feld"><label for="eKg">Gewicht <small>kg</small></label><input id="eKg" type="number" min="0" inputmode="numeric"></div>
+        <div class="feld"><label for="eNm">Drehmoment <small>Nm</small></label><input id="eNm" type="number" min="0" inputmode="numeric"></div>
+        <div class="feld"><label for="eCode">Tune-Sharecode</label><input id="eCode" inputmode="numeric"></div>
+        <div class="feld voll"><label for="eNotiz">Notiz</label><textarea id="eNotiz" rows="2"></textarea></div>
+        <label class="chk"><input id="eFav" type="checkbox"> ★ Favorit</label>
+      </div>
+    </div>
+
+    <footer class="dlg-fuss">
+      <button type="button" id="eLoeschen" class="btn gefahr" hidden>Löschen</button>
+      <button type="button" id="eKopie" class="btn" hidden>Als neuen Build kopieren</button>
+      <span class="raum"></span>
+      <button type="button" class="btn" data-schliessen>Abbrechen</button>
+      <button type="submit" id="eSpeichern" class="btn primaer">Speichern</button>
+    </footer>
+  </form>
+</dialog>
+
+<!-- Einstellungen -->
+<dialog id="dlgEinst" class="dlg">
+  <div class="dlg-kopf">
+    <h2>Daten &amp; Einstellungen</h2>
+    <button type="button" class="btn icon" data-schliessen aria-label="Schließen">✕</button>
+  </div>
+  <div class="dlg-inhalt">
+    <h3>Sicherung</h3>
+    <p class="hinweis">Deine Garage liegt nur in diesem Browser. Mach regelmäßig eine Sicherung, vor allem vor Browser-Aufräumaktionen oder beim Gerätewechsel.</p>
+    <div class="zeile">
+      <button id="btnExport" class="btn">JSON exportieren</button>
+      <button id="btnImport" class="btn">JSON importieren …</button>
+      <input id="importDatei" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p id="speicherInfo" class="hinweis"></p>
+
+    <h3>Auf allen Geräten</h3>
+    <p class="hinweis" id="syncInfo"></p>
+    <div class="zeile">
+      <a class="btn" href="/startseite/#sync">Sync-Einstellungen öffnen</a>
+      <button id="btnSyncJetzt" class="btn">Jetzt abgleichen</button>
+    </div>
+
+    <h3>Fahrzeugliste</h3>
+    <p class="hinweis" id="listeInfo"></p>
+    <details>
+      <summary>Liste aus forza.net aktualisieren (neue Car-Pass-Autos usw.)</summary>
+      <ol class="schritte">
+        <li>Öffne <a href="https://forza.net/fh6cars" target="_blank" rel="noopener">forza.net/fh6cars</a> und warte, bis die Tabelle geladen ist.</li>
+        <li>Drücke <kbd>F12</kbd> → Reiter <b>Konsole</b>, füge diese Zeile ein und drücke Enter (Chrome fragt beim ersten Mal ggf., ob Einfügen erlaubt ist, dann <code>allow pasting</code> tippen):
+          <pre id="snippet">copy(JSON.stringify([...document.querySelectorAll('table tbody tr')].map(r=>[...r.cells].map(c=>c.textContent.trim()))))</pre>
+          <button id="btnSnippet" class="btn klein">Zeile kopieren</button>
+        </li>
+        <li>Die Liste ist jetzt in der Zwischenablage. Hier einfügen und übernehmen:</li>
+      </ol>
+      <textarea id="listeEingabe" rows="3" placeholder="Hier einfügen (Strg+V)"></textarea>
+      <div class="zeile">
+        <button id="btnListeUebernehmen" class="btn primaer">Liste übernehmen</button>
+        <button id="btnListeReset" class="btn">Auf mitgelieferte Liste zurücksetzen</button>
+      </div>
+    </details>
+  </div>
+</dialog>
+
+<dialog id="dlgImport" class="dlg klein">
+  <form method="dialog">
+    <div class="dlg-kopf"><h2>Sicherung importieren</h2></div>
+    <div class="dlg-inhalt"><p id="importText"></p></div>
+    <footer class="dlg-fuss">
+      <button value="abbrechen" class="btn">Abbrechen</button>
+      <span class="raum"></span>
+      <button value="zusammen" class="btn">Zusammenführen</button>
+      <button value="ersetzen" class="btn primaer">Ersetzen</button>
+    </footer>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/startseite/sync-v1.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
