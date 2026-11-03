@@ -595,9 +595,8 @@
     return worker;
   }
 
-  // Bild aufbereiten: vergrößern, Graustufen, bei dunklem Hintergrund invertieren
-  async function aufbereiten(datei) {
-    const bmp = await createImageBitmap(datei);
+  // Ganzes Bild aufbereiten (Rückfallweg): vergrößern, Graustufen, bei dunklem Hintergrund invertieren
+  async function aufbereiten(bmp) {
     const f = Math.min(3, Math.max(1, 2400 / bmp.width));
     const c = document.createElement('canvas'); c.width = Math.round(bmp.width * f); c.height = Math.round(bmp.height * f);
     const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
@@ -607,6 +606,26 @@
     if (summe / (d.length / 4) < 128) for (let i = 0; i < d.length; i += 4) { d[i] = d[i + 1] = d[i + 2] = 255 - d[i]; }
     ctx.putImageData(img, 0, 0);
     return c;
+  }
+
+  /* Ausschnitt des Spielbildschirms (Angaben relativ, 0–1) vergrößern und nur helle, ungesättigte Pixel
+     (weiße/graue Schrift) als schwarze Schrift auf Weiß behalten. Farbige Flächen und dunkler Hintergrund fallen weg. */
+  function ausschnitt(bmp, x0, y0, x1, y1, faktor) {
+    const W = bmp.width, H = bmp.height, w = (x1 - x0) * W, h = (y1 - y0) * H;
+    const f = faktor * Math.max(1, 2000 / W);
+    const c = document.createElement('canvas'); c.width = Math.round(w * f); c.height = Math.round(h * f);
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, x0 * W, y0 * H, w, h, 0, 0, c.width, c.height);
+    const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const mn = Math.min(d[i], d[i + 1], d[i + 2]), mx = Math.max(d[i], d[i + 1], d[i + 2]);
+      d[i] = d[i + 1] = d[i + 2] = (mn > 130 && mx - mn < 70) ? 0 : 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    return c;
+  }
+  async function ocrLies(w, canvas, psm) {
+    await w.setParameters({ tessedit_pageseg_mode: psm || '3' });
+    return (await w.recognize(canvas)).data.text || '';
   }
 
   const zahlAus = s => { const n = Number(String(s).replace(/\s/g, '').replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
@@ -650,6 +669,11 @@
       const g = kandidaten.filter(n => n >= 50 && n < 600);
       if (g.length) w.vmax = Math.max(...g);
     }
+    // Fallback 0–100: Wert mit „Sek.“ (die Beschriftung wird manchmal falsch gelesen)
+    if (w.a100 == null) {
+      const m = zeilen.flatMap(z => [...z.matchAll(/(\d{1,2}[.,]\d{1,3})\s*Sek/gi)]).pop();
+      if (m) w.a100 = Number(m[1].replace(',', '.'));
+    }
     if (w.pi != null && (w.pi < 100 || w.pi > 999)) delete w.pi;
     return w;
   }
@@ -673,12 +697,34 @@
     try {
       ocrStatus('Lade Texterkennung …');
       const w = await holeWorker();
-      ocrStatus('Bereite Bild auf …');
-      const canvas = await aufbereiten(datei);
-      const { data } = await w.recognize(canvas);
-      const text = data.text || '';
-      ocr.roh.hidden = false; $('pre', ocr.roh).textContent = text;
-      const werte = werteAusText(text);
+      const bmp = await createImageBitmap(datei);
+      const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
+      let werte = {}, roh = '', autoText = '';
+      // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
+      const seite = bmp.width / bmp.height;
+      if (seite > 1.6 && seite < 1.9) {
+        ocrStatus('Lese Fahrzeugwerte …');
+        const name = await ocrLies(w, ausschnitt(bmp, 0.06, 0.23, 0.29, 0.31, 2));
+        const stats = await ocrLies(w, ausschnitt(bmp, 0.62, 0.22, 0.94, 0.72, 2));
+        const piNeu = await ocrLies(w, ausschnitt(bmp, 0.48, 0.64, 0.545, 0.69, 3), '7');   // Abzeichen „Neu“
+        werte = werteAusText(stats);
+        delete werte.pi;
+        const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
+        if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
+        autoText = name;
+        roh = `[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      }
+      // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
+      if (FELDER.some(k => werte[k] == null)) {
+        ocrStatus('Lese ganzes Bild …');
+        const ganz = await ocrLies(w, await aufbereiten(bmp));
+        const w2 = werteAusText(ganz);
+        for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
+        if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
+        roh += (roh ? '\n\n[Ganzes Bild]\n' : '') + ganz.trim();
+      }
+      const text = autoText;
+      ocr.roh.hidden = false; $('pre', ocr.roh).textContent = roh;
       const gefuellt = [];
       $$('.ocr-gefuellt', dlg).forEach(x => x.classList.remove('ocr-gefuellt'));
       for (const [k, v] of Object.entries(werte)) {

@@ -9,7 +9,7 @@
 - `SYNC.changed()` steht in `speichern()` in `app.js` (async, gibt Promise<boolean> zurück). Alle Änderungen an Einträgen und Promo laufen über `speichern()`.
 - Eintrag: `uid` (stabil, nie neu vergeben), `autoId` (Slug des Fahrzeugnamens aus der Liste bzw. `eigen-…`), `auto` (Kopie der Stammdaten, damit Einträge Listen-Updates überstehen), Werte nach Upgrade `pi, vmax (km/h), a100 (s), kw, kg, nm` (Leistung in kW wie im Spiel; frühere Einträge mit `ps` rechnet `psZuKw()` beim Laden/Import/Sync um), `reifen`, `antrieb`, `build`, `design` (Design/Lackierung, Freitext), `code`, `notiz`, `fav`, `erstellt`, `geaendert`.
 - Klassen aus PI: D ≤400, C ≤500, B ≤600, A ≤700, S1 ≤800, S2 ≤900, R ≤998, X 999.
-- Screenshot-Texterkennung: Tesseract.js 5.1.1 von jsdelivr, wird erst bei Bedarf geladen. Auswertung in `werteAusText()`. Getestet mit dem deutschen Tuning-Bildschirm (Spalten „Vorheriger“/„Neu“, es zählt der letzte Wert einer Zeile). Die PI-Abzeichen liest die Erkennung oft als allein stehende Zahl, die Tabellen-Kästchen manchmal als „B“.
+- Screenshot-Texterkennung: Tesseract.js 5.1.1 von jsdelivr, wird erst bei Bedarf geladen. Auswertung in `werteAusText()`. Bei 16:9-Screenshots des deutschen Tuning-Bildschirms liest `verarbeiteBild()` feste Ausschnitte einzeln (Name links oben, Autostatistik rechts, PI-Abzeichen „Neu“ mit psm 7) und behält per `ausschnitt()` nur weiße/graue Schrift. Fehlt danach ein Wert, wird das ganze Bild gelesen und nur Fehlendes ergänzt. In Zeilen mit „Vorheriger“/„Neu“ zählt der letzte Wert. Die Tabellen-Kästchen liest die Erkennung manchmal als „B“; Zahlen mit Einheit zählen deshalb nie als PI.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
 
