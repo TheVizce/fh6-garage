@@ -3,7 +3,8 @@
 ## Dieses Tool
 - Verwaltung der eigenen Autos aus Forza Horizon 6. Statische Seite: `index.html`, `app.js`, `style.css`, Fahrzeugliste `data/fahrzeuge.json` (von forza.net/fh6cars, 667 Autos, Stand 03.11.2026).
 - Speicher: nur localStorage, Präfix `fh6garage.` (`fh6garage.daten` = Einträge, `fh6garage.ui` = Ansicht/Sortierung, `fh6garage.fahrzeugliste` = optional selbst aktualisierte Fahrzeugliste). Keine IndexedDB.
-- Sync: Datei `fh6-garage.json` (keine Teildateien). `collections: { eintraege: { type: 'array', id: 'uid' } }`, keine `fields`. Die Fahrzeugliste wird nicht abgeglichen.
+- Sync: Datei `fh6-garage.json` (keine Teildateien). `collections: { eintraege: { type: 'array', id: 'uid' }, promo: 'map' }`, keine `fields`. Die Fahrzeugliste wird nicht abgeglichen.
+- Horizon Promo (fotografierte Autos): `daten.promo` = Map Fahrzeug-ID → Datum, pro Modell und unabhängig vom Besitz. Nur Fahrzeuge aus der Liste. Im Export/Import enthalten.
 - `SYNC.changed()` steht in `speichern()` in `app.js`. Alle Änderungen an Einträgen laufen über `speichern()`.
 - Eintrag: `uid` (stabil, nie neu vergeben), `autoId` (Slug des Fahrzeugnamens aus der Liste bzw. `eigen-…`), `auto` (Kopie der Stammdaten, damit Einträge Listen-Updates überstehen), Werte nach Upgrade `pi, vmax (km/h), a100 (s), ps, kg, nm`, `reifen`, `antrieb`, `build`, `code`, `notiz`, `fav`, `erstellt`, `geaendert`.
 - Klassen aus PI: D ≤400, C ≤500, B ≤600, A ≤700, S1 ≤800, S2 ≤900, R ≤998, X 999.

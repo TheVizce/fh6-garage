@@ -45,6 +45,11 @@
       <option value="ja">Nur in Garage</option>
       <option value="nein">Nicht in Garage</option>
     </select>
+    <select id="fPromo">
+      <option value="">📷 Promo: alle</option>
+      <option value="ja">📷 Fotografiert</option>
+      <option value="nein">📷 Noch nicht fotografiert</option>
+    </select>
     <select id="fSort"></select>
     <label class="chk nur-garage"><input id="fFav" type="checkbox"> ★ Favoriten</label>
   </section>
@@ -68,7 +73,7 @@
   <section id="ansichtKatalog" hidden>
     <div class="tabelle-wrap">
       <table class="liste" id="tabKatalog">
-        <thead><tr><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Bezug</th><th class="zahl">Garage</th><th></th></tr></thead>
+        <thead><tr><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Bezug</th><th class="zahl">Garage</th><th>Promo</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -129,6 +134,7 @@
         <div class="feld"><label for="eCode">Tune-Sharecode</label><input id="eCode" inputmode="numeric"></div>
         <div class="feld voll"><label for="eNotiz">Notiz</label><textarea id="eNotiz" rows="2"></textarea></div>
         <label class="chk"><input id="eFav" type="checkbox"> ★ Favorit</label>
+        <label class="chk" id="ePromoWrap" hidden><input id="ePromo" type="checkbox"> 📷 Für Horizon Promo fotografiert</label>
       </div>
     </div>
 

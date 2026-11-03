@@ -114,6 +114,15 @@ td.leer-wert { color: var(--linie); }
 .tag.dlc { color: var(--akzent2); }
 .anzahl { display: inline-block; min-width: 24px; text-align: center; padding: 2px 6px; border-radius: 6px; background: rgba(74,210,149,.15); color: var(--ok); font-weight: 600; }
 
+.promo-btn {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--linie); background: transparent; font-size: 13px; color: var(--leise); white-space: nowrap;
+  filter: grayscale(1); opacity: .75;
+}
+.promo-btn:hover { border-color: var(--leise); opacity: 1; }
+.promo-btn.an { filter: none; opacity: 1; color: #ffd34d; border-color: rgba(255,211,77,.5); background: rgba(255,211,77,.1); }
+.promo-mini { font-size: 13px; }
+
 .leer { text-align: center; color: var(--leise); padding: 40px 10px; }
 .hinweis { color: var(--leise); font-size: 13px; }
 
@@ -203,6 +212,9 @@ textarea#listeEingabe { width: 100%; }
   .liste td[data-l]::before { content: attr(data-l) " "; color: var(--leise); font-size: 12px; }
   .liste td.name { grid-column: 1; }
   .liste td.klassen, .liste td.aktion { grid-column: 2; grid-row: 1; text-align: right; }
+  .liste td.promo-zelle { grid-column: 2; grid-row: 3; text-align: right; }
+  #tabKatalog td.klassen { grid-row: 2; align-self: start; }
+  #tabKatalog td.aktion { grid-row: 1; }
   .liste td.stern { display: none; }
   .liste td.zahl { text-align: left; }
   .liste td.mob-weg { display: none; }

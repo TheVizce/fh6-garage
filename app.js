@@ -64,6 +64,9 @@
 
   let daten = lies(K_DATEN) || { version: VERSION, eintraege: [] };
   if (!Array.isArray(daten.eintraege)) daten.eintraege = [];
+  // Horizon Promo: pro Modell (Fahrzeug-ID → Datum), unabhängig vom Besitz
+  if (!daten.promo || typeof daten.promo !== 'object' || Array.isArray(daten.promo)) daten.promo = {};
+  const hatPromo = id => !!daten.promo[id];
   const ui = Object.assign({ tab: 'garage', sortG: 'neu', sortK: 'name' }, lies(K_UI) || {});
   function speichern() {
     daten.geaendert = new Date().toISOString();
@@ -81,10 +84,11 @@
     if (!window.ToolSync) return;
     SYNC = ToolSync.create({
       tool: 'fh6-garage',
-      collections: { eintraege: { type: 'array', id: 'uid' } },
-      get: () => ({ eintraege: daten.eintraege }),
+      collections: { eintraege: { type: 'array', id: 'uid' }, promo: 'map' },
+      get: () => ({ eintraege: daten.eintraege, promo: daten.promo }),
       apply: async d => {
         daten.eintraege = Array.isArray(d.eintraege) ? d.eintraege : [];
+        daten.promo = d.promo && typeof d.promo === 'object' && !Array.isArray(d.promo) ? d.promo : {};
         daten.geaendert = new Date().toISOString();
         const ok = schreib(K_DATEN, daten);
         fuelleFilter(); render();
@@ -149,7 +153,7 @@
   /* ---------- Filter & Darstellung ---------- */
   const f = {
     suche: $('#fSuche'), klasse: $('#fKlasse'), land: $('#fLand'), typ: $('#fTyp'),
-    reifen: $('#fReifen'), antrieb: $('#fAntrieb'), besitz: $('#fBesitz'), sort: $('#fSort'), fav: $('#fFav')
+    reifen: $('#fReifen'), antrieb: $('#fAntrieb'), besitz: $('#fBesitz'), promo: $('#fPromo'), sort: $('#fSort'), fav: $('#fFav')
   };
 
   function optionen(sel, werte, leer) {
@@ -172,6 +176,16 @@
     if (!f.sort.value) f.sort.value = opts[0][0];
   }
 
+  function passtPromo(id) {
+    if (f.promo.value === 'ja') return hatPromo(id);
+    if (f.promo.value === 'nein') return !hatPromo(id);
+    return true;
+  }
+  function setzePromo(id, an) {
+    if (an) daten.promo[id] = new Date().toISOString(); else delete daten.promo[id];
+    if (speichern()) render();
+  }
+
   function passtAuto(a, extra = '') {
     const q = norm(f.suche.value).trim();
     if (q && !q.split(/\s+/).every(w => (norm(a.n + ' ' + a.m + ' ' + a.t + ' ' + a.l) + ' ' + extra).includes(w))) return false;
@@ -189,6 +203,7 @@
       if (f.reifen.value && e.reifen !== f.reifen.value) return false;
       if (f.antrieb.value && e.antrieb !== f.antrieb.value) return false;
       if (f.fav.checked && !e.fav) return false;
+      if (!passtPromo(e.autoId)) return false;
       return true;
     });
     const s = ui.sortG, nv = v => v ?? -Infinity;
@@ -209,7 +224,7 @@
       const a = autoVon(e);
       return `<tr data-uid="${esc(e.uid)}">
         <td class="stern">${e.fav ? '★' : ''}</td>
-        <td class="name"><b>${esc(a.n || '?')}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}</td>
+        <td class="name"><b>${esc(a.n || '?')}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}</td>
         <td class="mob-weg">${esc(a.l || '')}</td>
         <td class="mob-weg leise">${esc(a.t || '')}</td>
         <td class="mob-weg">${badge(a.pi, a.k)}</td>
@@ -232,6 +247,7 @@
       const n = anz.get(a.id) || 0;
       if (f.besitz.value === 'ja' && !n) return false;
       if (f.besitz.value === 'nein' && n) return false;
+      if (!passtPromo(a.id)) return false;
       return true;
     });
     const cmp = {
@@ -252,6 +268,7 @@
         <td class="klassen">${badge(a.pi, a.k)}</td>
         <td class="mob-weg">${(a.b || []).map(b => `<span class="tag">${esc(b)}</span>`).join('')}${a.a ? `<span class="tag dlc">${esc(a.a)}</span>` : ''}</td>
         <td class="zahl" ${n ? 'data-l="In Garage"' : ''}>${n ? `<span class="anzahl">${n}×</span>` : ''}</td>
+        <td class="promo-zelle"><button class="promo-btn${hatPromo(a.id) ? ' an' : ''}" data-promo="${esc(a.id)}" aria-pressed="${hatPromo(a.id)}" title="${hatPromo(a.id) ? 'Fotografiert – zum Entfernen klicken' : 'Für Horizon Promo als fotografiert markieren'}">📷<span>${hatPromo(a.id) ? 'Foto ✓' : 'Foto'}</span></button></td>
         <td class="aktion"><button class="btn klein" data-neu="${esc(a.id)}">+ Garage</button></td>
       </tr>`;
     }).join('');
@@ -263,8 +280,9 @@
   function renderStat() {
     const anz = anzahlProAuto();
     const besessen = liste.filter(a => anz.has(a.id)).length;
+    const promo = liste.filter(a => hatPromo(a.id)).length;
     $('#statZeile').textContent = liste.length
-      ? `${daten.eintraege.length} Einträge · ${besessen} von ${liste.length} Modellen (${Math.round(besessen / liste.length * 100)} %)`
+      ? `${daten.eintraege.length} Einträge · ${besessen} von ${liste.length} Modellen (${Math.round(besessen / liste.length * 100)} %) · 📷 Promo ${promo} von ${liste.length}`
       : `${daten.eintraege.length} Einträge`;
   }
 
@@ -288,7 +306,7 @@
     suche: $('#eAutoSuche'), treffer: $('#autoTreffer'), info: $('#eAutoInfo'), eigenesBtn: $('#eEigenesBtn'), eigenes: $('#eEigenes'),
     build: $('#eBuild'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
     reifen: $('#eReifen'), antrieb: $('#eAntrieb'), ps: $('#ePs'), kg: $('#eKg'), nm: $('#eNm'),
-    code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'),
+    code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'),
     xMarke: $('#xMarke'), xName: $('#xName'), xLand: $('#xLand'), xTyp: $('#xTyp'), xPi: $('#xPi')
   };
   e.reifen.innerHTML = '<option value="">–</option>' + REIFEN.map(r => `<option>${r}</option>`).join('');
@@ -300,6 +318,8 @@
 
   function zeigeAutoInfo() {
     const a = gewaehlt;
+    e.promoWrap.hidden = !a;
+    if (a) e.promo.checked = hatPromo(a.id);
     if (!a) { e.info.innerHTML = ''; return; }
     e.info.innerHTML = `<b>${esc(a.n)}</b><span>${esc(a.l)}</span><span class="leise">${esc(a.t)}</span><span>Serie ${badge(a.pi, a.k)}</span>`
       + (a.a ? `<span class="tag dlc">${esc(a.a)}</span>` : '');
@@ -413,6 +433,11 @@
       daten.eintraege[i] = Object.assign({}, daten.eintraege[i], r, { geaendert: jetzt });
     } else {
       daten.eintraege.push(Object.assign({ uid: uid(), erstellt: jetzt, geaendert: jetzt }, r));
+    }
+    // Promo-Häkchen gilt pro Modell (nur Fahrzeuge aus der Liste)
+    if (!eigenesModus && gewaehlt) {
+      if (e.promo.checked && !hatPromo(gewaehlt.id)) daten.promo[gewaehlt.id] = jetzt;
+      else if (!e.promo.checked) delete daten.promo[gewaehlt.id];
     }
     if (speichern()) { dlg.close(); fuelleFilter(); render(); toast('Gespeichert'); }
   });
@@ -585,7 +610,7 @@
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   $('#btnExport').addEventListener('click', () => {
-    const out = { tool: 'fh6-garage', version: VERSION, exportiert: new Date().toISOString(), eintraege: daten.eintraege };
+    const out = { tool: 'fh6-garage', version: VERSION, exportiert: new Date().toISOString(), eintraege: daten.eintraege, promo: daten.promo };
     download(`fh6-garage-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(out, null, 1));
   });
   $('#btnImport').addEventListener('click', () => $('#importDatei').click());
@@ -595,16 +620,18 @@
     try { obj = JSON.parse(await d.text()); } catch (err) { zeigeFehler('Import: Datei ist kein gültiges JSON.'); return; }
     const neu = Array.isArray(obj) ? obj : obj.eintraege;
     if (!Array.isArray(neu) || neu.some(x => !x || !x.uid || !x.autoId)) { zeigeFehler('Import: Die Datei ist keine FH6-Garage-Sicherung.'); return; }
+    const neuPromo = (!Array.isArray(obj) && obj.promo && typeof obj.promo === 'object' && !Array.isArray(obj.promo)) ? obj.promo : {};
     const di = $('#dlgImport');
-    $('#importText').textContent = `Die Sicherung enthält ${neu.length} Einträge, aktuell sind ${daten.eintraege.length} gespeichert. „Ersetzen“ überschreibt die aktuelle Garage, „Zusammenführen“ ergänzt sie (bei gleichen Einträgen gewinnt der neuere Stand).`;
+    $('#importText').textContent = `Die Sicherung enthält ${neu.length} Einträge und ${Object.keys(neuPromo).length} Promo-Häkchen, aktuell sind ${daten.eintraege.length} Einträge und ${Object.keys(daten.promo).length} Promo-Häkchen gespeichert. „Ersetzen“ überschreibt die aktuelle Garage, „Zusammenführen“ ergänzt sie (bei gleichen Einträgen gewinnt der neuere Stand).`;
     di.returnValue = '';
     di.showModal();
     di.addEventListener('close', () => {
-      if (di.returnValue === 'ersetzen') daten.eintraege = neu;
+      if (di.returnValue === 'ersetzen') { daten.eintraege = neu; daten.promo = Object.assign({}, neuPromo); }
       else if (di.returnValue === 'zusammen') {
         const m = new Map(daten.eintraege.map(x => [x.uid, x]));
         neu.forEach(x => { const alt = m.get(x.uid); if (!alt || (x.geaendert || '') > (alt.geaendert || '')) m.set(x.uid, x); });
         daten.eintraege = [...m.values()];
+        daten.promo = Object.assign({}, neuPromo, daten.promo);
       } else return;
       if (speichern()) { fuelleFilter(); render(); speicherInfo(); toast('Import abgeschlossen'); }
     }, { once: true });
@@ -634,13 +661,15 @@
   /* ---------- Ereignisse Hauptansicht ---------- */
   $$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; uiSpeichern(); fuelleSort(); render(); }));
   $('#btnNeu').addEventListener('click', () => oeffneDialog(null));
-  [f.suche, f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.fav].forEach(x => x.addEventListener('input', render));
+  [f.suche, f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo, f.fav].forEach(x => x.addEventListener('input', render));
   f.sort.addEventListener('change', () => { if (ui.tab === 'garage') ui.sortG = f.sort.value; else ui.sortK = f.sort.value; uiSpeichern(); render(); });
   $('#tabGarage tbody').addEventListener('click', ev => {
     const tr = ev.target.closest('tr[data-uid]'); if (!tr) return;
     oeffneDialog(daten.eintraege.find(x => x.uid === tr.dataset.uid));
   });
   $('#tabKatalog tbody').addEventListener('click', ev => {
+    const pb = ev.target.closest('[data-promo]');
+    if (pb) { setzePromo(pb.dataset.promo, !hatPromo(pb.dataset.promo)); return; }
     const b = ev.target.closest('[data-neu]');
     const tr = ev.target.closest('tr[data-auto]'); if (!tr) return;
     const id = b ? b.dataset.neu : tr.dataset.auto;
