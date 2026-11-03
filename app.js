@@ -22,7 +22,7 @@
 
   const SORT_GARAGE = [
     ['neu', 'Zuletzt bearbeitet'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
-    ['vmax', 'Höchstgeschw.'], ['a100', '0–100 (schnellste)'], ['ps', 'Leistung'], ['kg', 'Gewicht (leicht)']
+    ['vmax', 'Höchstgeschw.'], ['a100', '0–100 (schnellste)'], ['kw', 'Leistung'], ['kg', 'Gewicht (leicht)']
   ];
   const SORT_KATALOG = [['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI Serie'], ['besitz', 'In Garage zuerst']];
 
@@ -105,11 +105,19 @@
     }
     return o;
   }
+  // Leistung wird wie im Spiel in kW gespeichert. Ältere Einträge hatten "ps" → einmalig umrechnen.
+  function psZuKw(e) {
+    if (!e || e.ps == null) return e;
+    const o = Object.assign({}, e);
+    if (o.kw == null) o.kw = Math.round(Number(o.ps) / 1.35962);
+    delete o.ps;
+    return o;
+  }
   function normDaten(d) {
     d = (d && typeof d === 'object') ? d : {};
     return {
       version: VERSION,
-      eintraege: Array.isArray(d.eintraege) ? d.eintraege.filter(x => x && x.uid).map(kompakt) : [],
+      eintraege: Array.isArray(d.eintraege) ? d.eintraege.filter(x => x && x.uid).map(psZuKw).map(kompakt) : [],
       promo: (d.promo && typeof d.promo === 'object' && !Array.isArray(d.promo)) ? d.promo : {},
       geaendert: d.geaendert
     };
@@ -121,6 +129,7 @@
   // Horizon Promo: pro Modell (Fahrzeug-ID → Datum), unabhängig vom Besitz
   const hatPromo = id => !!daten.promo[id];
   const ui = Object.assign({ tab: 'garage', sortG: 'neu', sortK: 'name' }, lies(K_UI) || {});
+  if (ui.sortG === 'ps') ui.sortG = 'kw';   // frühere Sortierung „Leistung (PS)“
 
   // Lädt die Garage. Übernimmt einmalig alte Daten aus dem localStorage und entfernt sie erst danach.
   async function ladeDaten() {
@@ -182,7 +191,7 @@
       collections: { eintraege: { type: 'array', id: 'uid' }, promo: 'map' },
       get: () => ({ eintraege: daten.eintraege, promo: daten.promo }),
       apply: async d => {
-        daten.eintraege = Array.isArray(d.eintraege) ? d.eintraege.map(kompakt) : [];
+        daten.eintraege = Array.isArray(d.eintraege) ? d.eintraege.map(psZuKw).map(kompakt) : [];
         daten.promo = d.promo && typeof d.promo === 'object' && !Array.isArray(d.promo) ? d.promo : {};
         daten.geaendert = new Date().toISOString();
         const ok = await schreibDaten();
@@ -318,7 +327,7 @@
       pi: (x, y) => nv(y.pi ?? autoVon(y).pi) - nv(x.pi ?? autoVon(x).pi),
       vmax: (x, y) => nv(y.vmax) - nv(x.vmax),
       a100: (x, y) => (x.a100 ?? Infinity) - (y.a100 ?? Infinity),
-      ps: (x, y) => nv(y.ps) - nv(x.ps),
+      kw: (x, y) => nv(y.kw) - nv(x.kw),
       kg: (x, y) => (x.kg ?? Infinity) - (y.kg ?? Infinity)
     }[s] || (() => 0);
     arr.sort(cmp);
@@ -333,7 +342,7 @@
         <td class="mob-weg leise">${esc(a.t || '')}</td>
         <td class="mob-weg">${badge(a.pi, a.k)}</td>
         <td class="klassen">${e.pi != null ? badge(e.pi) : '<span class="leise">–</span>'}</td>
-        ${z(e.vmax, 0, 'km/h')}${z(e.a100, e.a100 != null && e.a100 < 10 ? 2 : 1, '0–100 s')}${z(e.ps, 0, 'PS')}${z(e.kg, 0, 'kg')}
+        ${z(e.vmax, 0, 'km/h')}${z(e.a100, e.a100 != null && e.a100 < 10 ? 2 : 1, '0–100 s')}${z(e.kw, 0, 'kW')}${z(e.kg, 0, 'kg')}
         <td ${e.reifen ? 'data-l="Reifen"' : 'class="leer-wert"'}>${esc(e.reifen || '–')}</td>
         <td ${e.antrieb ? 'data-l="Antrieb"' : 'class="leer-wert"'}>${esc(e.antrieb || '–')}</td>
       </tr>`;
@@ -409,7 +418,7 @@
   const e = {
     suche: $('#eAutoSuche'), treffer: $('#autoTreffer'), info: $('#eAutoInfo'), eigenesBtn: $('#eEigenesBtn'), eigenes: $('#eEigenes'),
     build: $('#eBuild'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
-    reifen: $('#eReifen'), antrieb: $('#eAntrieb'), ps: $('#ePs'), kg: $('#eKg'), nm: $('#eNm'),
+    reifen: $('#eReifen'), antrieb: $('#eAntrieb'), kw: $('#eKw'), kg: $('#eKg'), nm: $('#eNm'),
     code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'),
     xMarke: $('#xMarke'), xName: $('#xName'), xLand: $('#xLand'), xTyp: $('#xTyp'), xPi: $('#xPi')
   };
@@ -473,7 +482,7 @@
   e.eigenesBtn.addEventListener('click', () => setzeEigenes(!eigenesModus));
   e.pi.addEventListener('input', () => { e.piBadge.innerHTML = zahl(e.pi.value) != null ? badge(zahl(e.pi.value)) : ''; });
 
-  const ZAHLFELDER = ['pi', 'vmax', 'a100', 'ps', 'kg', 'nm'];
+  const ZAHLFELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
 
   function oeffneDialog(eintrag, autoId) {
     bearbeitet = eintrag ? eintrag.uid : null;
@@ -605,7 +614,7 @@
   // Liest Werte aus dem erkannten Text. Bei "vorher → nachher" zählt jeweils der letzte Wert einer Zeile.
   function werteAusText(text) {
     const zeilen = text.split(/\n+/).map(z => z.replace(/[|]/g, ' ').trim()).filter(Boolean);
-    const w = {};
+    const w = {}, piKlasse = [], piAllein = [];
     for (const z of zeilen) {
       const lz = norm(z);
       if (w.a100 == null && /0\s*[-–—~]\s*100/.test(lz)) {
@@ -616,13 +625,24 @@
       if (w.vmax == null && /(hochstgeschw|top\s*speed|hochstgeschwindigkeit|v\s*-?\s*max|geschwindigkeit)/.test(lz) && !/0\s*[-–—~]\s*100/.test(lz)) {
         const n = letzteZahl(z, /\d{2,3}(?:[.,]\d)?/g); if (n != null && n >= 50 && n < 600) w.vmax = n;
       }
-      if (w.ps == null) { const m = [...z.matchAll(/(\d{2,4})\s*(PS|HP|BHP|kW)\b/gi)].pop(); if (m) w.ps = /kw/i.test(m[2]) ? Math.round(Number(m[1]) * 1.35962) : Number(m[1]); }
+      // Leistung in kW (wie im Spiel); PS/HP werden umgerechnet. "KW/kg" (Leistungsgewicht) zählt nicht.
+      if (w.kw == null) { const m = [...z.matchAll(/(\d{2,4})\s*(kW|PS|HP|BHP)\b(?!\s*\/)/gi)].pop(); if (m) w.kw = /kw/i.test(m[2]) ? Number(m[1]) : Math.round(Number(m[1]) / 1.35962); }
       if (w.kg == null) { const m = [...z.matchAll(/(\d{1,2}[.,]?\d{3}|\d{3,4})\s*kg\b/gi)].pop(); if (m) { const n = zahlAus(m[1]); if (n >= 300 && n < 6000) w.kg = n; } }
-      if (w.nm == null) { const m = [...z.matchAll(/(\d{2,4})\s*(N\s*[·.\-]?\s*m)\b/gi)].pop(); if (m) w.nm = Number(m[1]); }
+      if (w.nm == null) { const m = [...z.matchAll(/(\d{2,4})\s*N\s*[·.:'’`´\-]?\s*m\b/gi)].pop(); if (m) w.nm = Number(m[1]); }
       if (w.antrieb == null) { const m = z.match(/\b(AWD|RWD|FWD)\b/); if (m) w.antrieb = m[1]; else if (/allrad/.test(lz)) w.antrieb = 'AWD'; else if (/heckantrieb/.test(lz)) w.antrieb = 'RWD'; else if (/frontantrieb/.test(lz)) w.antrieb = 'FWD'; }
-      const pis = [...z.matchAll(/\b(S1|S2|[DCBARX])\s*[:\-]?\s*(\d{3})\b/g)];
-      if (pis.length) w.pi = Number(pis[pis.length - 1][2]);
+      // PI: Zahlen mit Einheit (km/h, kg, kW, N·m, Sek. …) und Datumsangaben vorher entfernen,
+      // dann zuerst "Klasse + Zahl" (z. B. "C 500"), sonst eine allein stehende dreistellige Zahl (Abzeichen).
+      const ohneEinheit = z
+        .replace(/\d+[.,]\d+[.,]\d+/g, ' ')
+        .replace(/\d[\d.,]*\s*(km\s*\/?\s*h|kg|kw|ps|hp|bhp|n\s*[·.:'’`´\-]?\s*m|sek\.?|s\b|%)/gi, ' ');
+      const mitKlasse = [...ohneEinheit.matchAll(/(?:^|[^A-Za-z0-9])(S1|S2|[DCBARX])\s*[:\-]?\s*(\d{3})(?![\d.,])/g)];
+      if (mitKlasse.length) { piKlasse.push(Number(mitKlasse[mitKlasse.length - 1][2])); }
+      else if (/^[^A-Za-zÄÖÜäöüß]*\d{3}[^A-Za-zÄÖÜäöüß\d]*$/.test(ohneEinheit.trim())) {
+        const m = ohneEinheit.match(/(?:^|[^\d.,])(\d{3})(?![\d.,])/); if (m) piAllein.push(Number(m[1]));
+      }
     }
+    const piWahl = piKlasse.length ? piKlasse : piAllein;
+    if (piWahl.length) w.pi = piWahl[piWahl.length - 1];
     // Fallback Höchstgeschwindigkeit: größter km/h-Wert, der nicht in einer 0-100-Zeile steht
     if (w.vmax == null) {
       const kandidaten = zeilen.filter(z => !/0\s*[-–—~]\s*100/.test(z)).flatMap(z => [...z.matchAll(/(\d{2,3}(?:[.,]\d)?)\s*km\s*\/?\s*h/gi)].map(m => zahlAus(m[1])));
@@ -666,7 +686,7 @@
       }
       e.pi.dispatchEvent(new Event('input'));
       if (!gewaehlt && !eigenesModus) { const a = autoAusText(text); if (a) { waehleAuto(a); gefuellt.push('Fahrzeug'); } }
-      const namen = { pi: 'PI', vmax: 'Höchstgeschw.', a100: '0–100', ps: 'PS', kg: 'Gewicht', nm: 'Drehmoment', antrieb: 'Antrieb' };
+      const namen = { pi: 'PI', vmax: 'Höchstgeschw.', a100: '0–100', kw: 'Leistung', kg: 'Gewicht', nm: 'Drehmoment', antrieb: 'Antrieb' };
       if (gefuellt.length) ocrStatus('Erkannt: ' + gefuellt.map(k => namen[k] || k).join(', ') + ' – bitte grün markierte Felder prüfen.', 'ok');
       else ocrStatus('Keine Werte erkannt. Unter „Erkannter Text“ siehst du, was gelesen wurde.', 'fehl');
     } catch (err) {
@@ -736,10 +756,10 @@
     di.returnValue = '';
     di.showModal();
     di.addEventListener('close', async () => {
-      if (di.returnValue === 'ersetzen') { daten.eintraege = neu.map(kompakt); daten.promo = Object.assign({}, neuPromo); }
+      if (di.returnValue === 'ersetzen') { daten.eintraege = neu.map(psZuKw).map(kompakt); daten.promo = Object.assign({}, neuPromo); }
       else if (di.returnValue === 'zusammen') {
         const m = new Map(daten.eintraege.map(x => [x.uid, x]));
-        neu.forEach(x => { const alt = m.get(x.uid); if (!alt || (x.geaendert || '') > (alt.geaendert || '')) m.set(x.uid, kompakt(x)); });
+        neu.forEach(x => { const alt = m.get(x.uid); if (!alt || (x.geaendert || '') > (alt.geaendert || '')) m.set(x.uid, kompakt(psZuKw(x))); });
         daten.eintraege = [...m.values()];
         daten.promo = Object.assign({}, neuPromo, daten.promo);
       } else return;
