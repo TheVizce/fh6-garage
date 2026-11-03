@@ -1,6 +1,8 @@
 /* FH6 Garage – Verwaltung der eigenen Forza-Horizon-6-Fahrzeuge
- * Speicher: localStorage mit Präfix "fh6garage." (Daten bleiben weit unter 500 KB).
- * Kein localStorage.clear(), keine fremden Schlüssel anfassen.
+ * Speicher: IndexedDB "fh6-garage" (Store "kv": "daten" = Garage + Promo, "fahrzeugliste" = optional aktualisierte Liste).
+ * localStorage nur für "fh6garage.ui" (Ansicht). Bis 03.11.2026 lagen die Daten unter "fh6garage.daten" /
+ * "fh6garage.fahrzeugliste" im localStorage; sie werden beim Start einmalig übernommen und erst danach entfernt.
+ * Kein localStorage.clear(), keine fremden Schlüssel oder Datenbanken anfassen.
  */
 (() => {
   'use strict';
@@ -10,6 +12,7 @@
   const K_UI = PRAEFIX + 'ui';
   const K_LISTE = PRAEFIX + 'fahrzeugliste';
   const VERSION = 1;
+  const DB_NAME = 'fh6-garage', DB_STORE = 'kv';
 
   const KLASSEN = ['D', 'C', 'B', 'A', 'S1', 'S2', 'R', 'X'];
   const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage'];
@@ -69,22 +72,107 @@
     }
   }
 
-  let daten = lies(K_DATEN) || { version: VERSION, eintraege: [] };
-  if (!Array.isArray(daten.eintraege)) daten.eintraege = [];
+  /* ---------- IndexedDB ---------- */
+  let dbp = null;
+  function openDb() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('IndexedDB ist in diesem Browser nicht verfügbar'));
+      const r = indexedDB.open(DB_NAME, 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains(DB_STORE)) r.result.createObjectStore(DB_STORE); };
+      r.onsuccess = () => { const d = r.result; d.onversionchange = () => { d.close(); dbp = null; }; res(d); };
+      r.onerror = () => { dbp = null; rej(r.error || new Error('Datenbank konnte nicht geöffnet werden')); };
+      r.onblocked = () => { dbp = null; rej(new Error('Datenbank ist blockiert (Tool in einem anderen Tab offen?)')); };
+    });
+    return dbp;
+  }
+  async function idb(modus, key, wert) {
+    const d = await openDb();
+    return new Promise((res, rej) => {
+      const t = d.transaction(DB_STORE, modus === 'get' ? 'readonly' : 'readwrite'), st = t.objectStore(DB_STORE);
+      const q = modus === 'get' ? st.get(key) : modus === 'put' ? st.put(wert, key) : st.delete(key);
+      t.oncomplete = () => res(modus === 'get' ? q.result : true);
+      t.onerror = t.onabort = () => rej(t.error || q.error || new Error('Datenbankfehler'));
+    });
+  }
+
+  // Leere Felder weglassen (null, '', false) – spart gut die Hälfte des Platzes, ohne Informationen zu verlieren
+  function kompakt(e) {
+    const o = {};
+    for (const [k, v] of Object.entries(e || {})) {
+      if (v === null || v === undefined || v === '' || v === false) continue;
+      o[k] = (k === 'auto' && v && typeof v === 'object') ? kompakt(v) : v;
+    }
+    return o;
+  }
+  function normDaten(d) {
+    d = (d && typeof d === 'object') ? d : {};
+    return {
+      version: VERSION,
+      eintraege: Array.isArray(d.eintraege) ? d.eintraege.filter(x => x && x.uid).map(kompakt) : [],
+      promo: (d.promo && typeof d.promo === 'object' && !Array.isArray(d.promo)) ? d.promo : {},
+      geaendert: d.geaendert
+    };
+  }
+
+  let daten = normDaten(null);
+  let bereit = false;          // erst nach dem Laden darf gespeichert werden
+  let speicherArt = 'idb';     // 'idb' oder – falls IndexedDB nicht geht – 'ls'
   // Horizon Promo: pro Modell (Fahrzeug-ID → Datum), unabhängig vom Besitz
-  if (!daten.promo || typeof daten.promo !== 'object' || Array.isArray(daten.promo)) daten.promo = {};
   const hatPromo = id => !!daten.promo[id];
   const ui = Object.assign({ tab: 'garage', sortG: 'neu', sortK: 'name' }, lies(K_UI) || {});
-  function speichern() {
+
+  // Lädt die Garage. Übernimmt einmalig alte Daten aus dem localStorage und entfernt sie erst danach.
+  async function ladeDaten() {
+    try {
+      let d = await idb('get', 'daten');
+      const alt = lies(K_DATEN);
+      if (!d && alt) {
+        d = normDaten(alt);
+        await idb('put', 'daten', d);
+        const probe = await idb('get', 'daten');
+        if (!probe || !Array.isArray(probe.eintraege) || probe.eintraege.length !== d.eintraege.length) throw new Error('Übernahme in die Datenbank ließ sich nicht bestätigen');
+        localStorage.removeItem(K_DATEN);
+        toast(`Garage in die eigene Datenbank umgezogen (${d.eintraege.length} Einträge)`);
+      } else if (d && alt) {
+        localStorage.removeItem(K_DATEN);   // Rest eines früheren, bereits erfolgten Umzugs
+      }
+      daten = normDaten(d);
+      try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (_) { /* optional */ }
+    } catch (e) {
+      speicherArt = 'ls';
+      daten = normDaten(lies(K_DATEN));
+      zeigeFehler('Die Datenbank (IndexedDB) ist nicht nutzbar: ' + e.message + '. Die Garage bleibt vorerst im gemeinsamen localStorage – bitte regelmäßig exportieren.');
+    }
+    bereit = true;
+  }
+
+  let schreibKette = Promise.resolve();
+  function schreibDaten() {
+    const stand = JSON.parse(JSON.stringify(daten));
+    const job = schreibKette.then(async () => {
+      if (speicherArt === 'ls') return schreib(K_DATEN, stand);
+      try { await idb('put', 'daten', stand); return true; }
+      catch (e) {
+        const voll = e && e.name === 'QuotaExceededError';
+        zeigeFehler(voll ? 'Speichern fehlgeschlagen: Der Speicher dieses Browsers ist voll. Bitte exportiere eine Sicherung.' : 'Speichern fehlgeschlagen: ' + (e && e.message));
+        return false;
+      }
+    });
+    schreibKette = job.catch(() => false);
+    return job;
+  }
+  async function speichern() {
+    if (!bereit) { zeigeFehler('Die Garage wird noch geladen – bitte gleich noch einmal speichern.'); return false; }
     daten.geaendert = new Date().toISOString();
-    const ok = schreib(K_DATEN, daten);
+    const ok = await schreibDaten();
     if (ok && SYNC) SYNC.changed();   // gemeinsamer Sync: nach jedem erfolgreichen Speichern melden
     return ok;
   }
 
   /* ---------- Gemeinsamer GitHub-Sync (/startseite/sync-v1.js) ----------
      Privates Repo tool-daten, Datei fh6-garage.json. Token/Repo nur auf der Startseite.
-     Abgeglichen wird die Liste der Garage-Einträge (ID-Feld "uid").
+     Abgeglichen werden die Garage-Einträge (ID-Feld "uid") und die Promo-Häkchen.
      Die Fahrzeugliste wird nicht abgeglichen (kommt aus dem Repo bzw. von forza.net). */
   let SYNC = null;
   function initSync() {
@@ -94,10 +182,10 @@
       collections: { eintraege: { type: 'array', id: 'uid' }, promo: 'map' },
       get: () => ({ eintraege: daten.eintraege, promo: daten.promo }),
       apply: async d => {
-        daten.eintraege = Array.isArray(d.eintraege) ? d.eintraege : [];
+        daten.eintraege = Array.isArray(d.eintraege) ? d.eintraege.map(kompakt) : [];
         daten.promo = d.promo && typeof d.promo === 'object' && !Array.isArray(d.promo) ? d.promo : {};
         daten.geaendert = new Date().toISOString();
-        const ok = schreib(K_DATEN, daten);
+        const ok = await schreibDaten();
         fuelleFilter(); render();
         return ok;
       }
@@ -134,7 +222,15 @@
   }
 
   async function ladeListe() {
-    const eigene = lies(K_LISTE);
+    let eigene = null;
+    if (speicherArt === 'idb') {
+      try {
+        eigene = await idb('get', 'fahrzeugliste');
+        const alt = lies(K_LISTE);
+        if (!eigene && alt && Array.isArray(alt.fahrzeuge)) { await idb('put', 'fahrzeugliste', alt); eigene = alt; }
+        if (alt && await idb('get', 'fahrzeugliste')) localStorage.removeItem(K_LISTE);
+      } catch (e) { zeigeFehler('Aktualisierte Fahrzeugliste konnte nicht gelesen werden: ' + e.message); }
+    } else eigene = lies(K_LISTE);
     if (eigene && Array.isArray(eigene.fahrzeuge) && eigene.fahrzeuge.length) {
       setzeListe(eigene, 'aktualisiert');
       return;
@@ -190,7 +286,8 @@
   }
   function setzePromo(id, an) {
     if (an) daten.promo[id] = new Date().toISOString(); else delete daten.promo[id];
-    if (speichern()) render();
+    render();
+    speichern();
   }
 
   function passtAuto(a, extra = '') {
@@ -431,28 +528,28 @@
   }
   function alertFeld(feld, text) { feld.setCustomValidity(text); feld.reportValidity(); feld.addEventListener('input', () => feld.setCustomValidity(''), { once: true }); }
 
-  $('#formEintrag').addEventListener('submit', ev => {
+  $('#formEintrag').addEventListener('submit', async ev => {
     ev.preventDefault();
     const r = eintragAusFormular(); if (!r) return;
     const jetzt = new Date().toISOString();
     if (bearbeitet) {
       const i = daten.eintraege.findIndex(x => x.uid === bearbeitet);
-      daten.eintraege[i] = Object.assign({}, daten.eintraege[i], r, { geaendert: jetzt });
+      daten.eintraege[i] = kompakt(Object.assign({}, daten.eintraege[i], r, { geaendert: jetzt }));
     } else {
-      daten.eintraege.push(Object.assign({ uid: uid(), erstellt: jetzt, geaendert: jetzt }, r));
+      daten.eintraege.push(kompakt(Object.assign({ uid: uid(), erstellt: jetzt, geaendert: jetzt }, r)));
     }
     // Promo-Häkchen gilt pro Modell (nur Fahrzeuge aus der Liste)
     if (!eigenesModus && gewaehlt) {
       if (e.promo.checked && !hatPromo(gewaehlt.id)) daten.promo[gewaehlt.id] = jetzt;
       else if (!e.promo.checked) delete daten.promo[gewaehlt.id];
     }
-    if (speichern()) { dlg.close(); fuelleFilter(); render(); toast('Gespeichert'); }
+    if (await speichern()) { dlg.close(); fuelleFilter(); render(); toast('Gespeichert'); }
   });
-  $('#eLoeschen').addEventListener('click', () => {
+  $('#eLoeschen').addEventListener('click', async () => {
     const x = daten.eintraege.find(y => y.uid === bearbeitet);
     if (!x || !confirm(`„${autoVon(x).n}${x.build ? ' – ' + x.build : ''}“ wirklich löschen?`)) return;
     daten.eintraege = daten.eintraege.filter(y => y.uid !== bearbeitet);
-    if (speichern()) { dlg.close(); render(); toast('Gelöscht'); }
+    if (await speichern()) { dlg.close(); render(); toast('Gelöscht'); }
   });
   $('#eKopie').addEventListener('click', () => {
     bearbeitet = null;
@@ -597,7 +694,13 @@
         gesamt += g; if (k.startsWith(PRAEFIX)) eigen += g;
       }
     } catch (_) { /* ignorieren */ }
-    $('#speicherInfo').textContent = `Belegt von diesem Tool: ca. ${fmt(eigen / 1024)} KB · alle Tools auf dieser Adresse zusammen: ca. ${fmt(gesamt / 1024)} KB von ~5 MB.`;
+    const groesse = new Blob([JSON.stringify(daten)]).size;
+    $('#speicherInfo').textContent = speicherArt === 'idb'
+      ? `Speicherort: eigene Datenbank (IndexedDB „${DB_NAME}“), Garage ca. ${fmt(groesse / 1024)} KB · ${daten.eintraege.length} Einträge, ${Object.keys(daten.promo).length} Promo-Häkchen. Im gemeinsamen localStorage liegen nur Ansicht-Einstellungen (ca. ${fmt(eigen / 1024, 1)} KB).`
+      : `Speicherort: gemeinsamer localStorage (Datenbank nicht verfügbar) – ca. ${fmt(eigen / 1024)} KB von diesem Tool, alle Tools zusammen ca. ${fmt(gesamt / 1024)} KB von ~5 MB.`;
+    if (speicherArt === 'idb' && navigator.storage && navigator.storage.persisted) {
+      navigator.storage.persisted().then(p => { $('#speicherInfo').textContent += ` Dauerhaft geschützt: ${p ? 'ja' : 'nein'}.`; }).catch(() => {});
+    }
     $('#listeInfo').textContent = `${liste.length} Fahrzeuge · Stand ${listeMeta.stand || '?'} · ${listeMeta.herkunft === 'aktualisiert' ? 'selbst aktualisiert' : 'mitgeliefert'} (Quelle: ${listeMeta.quelle || '–'})`;
   }
   $('#btnEinst').addEventListener('click', () => {
@@ -632,15 +735,15 @@
     $('#importText').textContent = `Die Sicherung enthält ${neu.length} Einträge und ${Object.keys(neuPromo).length} Promo-Häkchen, aktuell sind ${daten.eintraege.length} Einträge und ${Object.keys(daten.promo).length} Promo-Häkchen gespeichert. „Ersetzen“ überschreibt die aktuelle Garage, „Zusammenführen“ ergänzt sie (bei gleichen Einträgen gewinnt der neuere Stand).`;
     di.returnValue = '';
     di.showModal();
-    di.addEventListener('close', () => {
-      if (di.returnValue === 'ersetzen') { daten.eintraege = neu; daten.promo = Object.assign({}, neuPromo); }
+    di.addEventListener('close', async () => {
+      if (di.returnValue === 'ersetzen') { daten.eintraege = neu.map(kompakt); daten.promo = Object.assign({}, neuPromo); }
       else if (di.returnValue === 'zusammen') {
         const m = new Map(daten.eintraege.map(x => [x.uid, x]));
-        neu.forEach(x => { const alt = m.get(x.uid); if (!alt || (x.geaendert || '') > (alt.geaendert || '')) m.set(x.uid, x); });
+        neu.forEach(x => { const alt = m.get(x.uid); if (!alt || (x.geaendert || '') > (alt.geaendert || '')) m.set(x.uid, kompakt(x)); });
         daten.eintraege = [...m.values()];
         daten.promo = Object.assign({}, neuPromo, daten.promo);
       } else return;
-      if (speichern()) { fuelleFilter(); render(); speicherInfo(); toast('Import abgeschlossen'); }
+      if (await speichern()) { fuelleFilter(); render(); speicherInfo(); toast('Import abgeschlossen'); }
     }, { once: true });
   });
 
@@ -648,12 +751,14 @@
     try { await navigator.clipboard.writeText($('#snippet').textContent); toast('Kopiert'); }
     catch (_) { toast('Kopieren nicht möglich – bitte manuell markieren'); }
   });
-  $('#btnListeUebernehmen').addEventListener('click', () => {
+  $('#btnListeUebernehmen').addEventListener('click', async () => {
     try {
       const neu = konvertiereRoh(JSON.parse($('#listeEingabe').value.trim()));
       if (neu.fahrzeuge.length < 100) throw new Error('Nur ' + neu.fahrzeuge.length + ' Fahrzeuge – war die Tabelle vollständig geladen?');
       const vorher = liste.length;
-      if (!schreib(K_LISTE, { quelle: neu.quelle, stand: neu.stand, fahrzeuge: neu.fahrzeuge.map(({ _such, ...r }) => r) })) return;
+      const roh = { quelle: neu.quelle, stand: neu.stand, fahrzeuge: neu.fahrzeuge.map(({ _such, ...r }) => r) };
+      if (speicherArt === 'idb') await idb('put', 'fahrzeugliste', roh);
+      else if (!schreib(K_LISTE, roh)) return;
       setzeListe(neu, 'aktualisiert');
       $('#listeEingabe').value = '';
       fuelleFilter(); render(); speicherInfo();
@@ -661,7 +766,8 @@
     } catch (err) { zeigeFehler('Liste konnte nicht übernommen werden: ' + err.message); }
   });
   $('#btnListeReset').addEventListener('click', async () => {
-    try { localStorage.removeItem(K_LISTE); } catch (_) { /* ignorieren */ }
+    try { if (speicherArt === 'idb') await idb('del', 'fahrzeugliste'); else localStorage.removeItem(K_LISTE); }
+    catch (e) { zeigeFehler('Zurücksetzen fehlgeschlagen: ' + e.message); return; }
     await ladeListe(); fuelleFilter(); render(); speicherInfo(); toast('Mitgelieferte Liste aktiv');
   });
 
@@ -689,6 +795,7 @@
 
   /* ---------- Start ---------- */
   (async () => {
+    await ladeDaten();
     await ladeListe();
     fuelleFilter(); fuelleSort(); render();
     initSync();
