@@ -612,7 +612,7 @@
      (weiße/graue Schrift) als schwarze Schrift auf Weiß behalten. Farbige Flächen und dunkler Hintergrund fallen weg. */
   function ausschnitt(bmp, x0, y0, x1, y1, faktor) {
     const W = bmp.width, H = bmp.height, w = (x1 - x0) * W, h = (y1 - y0) * H;
-    const f = faktor * Math.max(1, 2000 / W);
+    const f = faktor * Math.max(1, 2600 / W);
     const c = document.createElement('canvas'); c.width = Math.round(w * f); c.height = Math.round(h * f);
     const ctx = c.getContext('2d'); ctx.drawImage(bmp, x0 * W, y0 * H, w, h, 0, 0, c.width, c.height);
     const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
