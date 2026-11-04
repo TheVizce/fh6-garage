@@ -573,78 +573,109 @@
   /* ---------- Screenshot-Texterkennung (Tesseract.js, lokal im Browser) ---------- */
   const ocr = { zone: $('#ocrZone'), datei: $('#ocrDatei'), status: $('#ocrStatus'), roh: $('#ocrRoh') };
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-  let tessLaden = null, worker = null;
+  let worker = null;
 
   function ocrReset() { const v = $('#ocrVorschau'); if (v) v.hidden = true; ocr.status.textContent = ''; ocr.status.className = 'ocr-status'; ocr.roh.hidden = true; ocr.roh.open = false; }
   function ocrStatus(t, cls = '') { ocr.status.textContent = t; ocr.status.className = 'ocr-status ' + cls; }
 
-  function ladeTesseract() {
-    if (window.Tesseract) return Promise.resolve();
-    if (!tessLaden) tessLaden = new Promise((ok, fail) => {
-      const s = document.createElement('script'); s.src = TESS_URL; s.onload = ok;
-      s.onerror = () => { tessLaden = null; fail(new Error('Texterkennung konnte nicht geladen werden (offline?)')); };
+  const skripte = {};
+  function ladeSkript(url, pruefe) {
+    if (pruefe()) return Promise.resolve();
+    if (!skripte[url]) skripte[url] = new Promise((ok, fail) => {
+      const s = document.createElement('script'); s.src = url; s.onload = ok;
+      s.onerror = () => { delete skripte[url]; fail(new Error('Konnte ' + url.split('/npm/')[1] + ' nicht laden (offline?)')); };
       document.head.appendChild(s);
     });
-    return tessLaden;
+    return skripte[url];
   }
-  const OCR_VERSION = '20261104d';
-  async function holeWorker(neuLaden) {
+  const ladeTesseract = () => ladeSkript(TESS_URL, () => !!window.Tesseract);
+  const OCR_VERSION = '20261104e';
+  async function holeWorker() {
     await ladeTesseract();
-    if (neuLaden && worker) { try { await worker.terminate(); } catch (_) { /* egal */ } worker = null; }
     if (!worker) worker = await Tesseract.createWorker(['deu', 'eng'], 1, {
-      cacheMethod: neuLaden ? 'refresh' : 'write',   // 'refresh' lädt die Sprachdaten neu statt aus dem Zwischenspeicher
       logger: m => { if (m.status === 'recognizing text') ocrStatus('Lese Text … ' + Math.round(m.progress * 100) + ' %'); else if (m.status) ocrStatus('Vorbereitung: ' + m.status); }
     });
     return worker;
   }
 
-  // Ganzes Bild aufbereiten (Rückfallweg): vergrößern, Graustufen, bei dunklem Hintergrund invertieren
-  async function aufbereiten(bmp) {
-    const f = Math.min(3, Math.max(1, 2400 / bmp.width));
-    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * f); c.height = Math.round(bmp.height * f);
-    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
-    const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
-    let summe = 0;
-    for (let i = 0; i < d.length; i += 4) { const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = g; summe += g; }
-    if (summe / (d.length / 4) < 128) for (let i = 0; i < d.length; i += 4) { d[i] = d[i + 1] = d[i + 2] = 255 - d[i]; }
-    ctx.putImageData(img, 0, 0);
-    return c;
+  /* ---------- Bildpunkte ohne Canvas ----------
+     Firefox (Fingerprinting-Schutz) verfälscht Pixel, die aus einem Canvas zurückgelesen werden.
+     Deshalb wird JPG/PNG direkt aus der Datei entschlüsselt (jpeg-js bzw. UPNG + pako) und alles Weitere
+     – Ausschnitt, Vergrößern, Schwarz/Weiß, BMP für Tesseract – in eigenen Arrays gerechnet.
+     Nur für andere Formate (z. B. WebP) wird ein Canvas benutzt. */
+  const JPEG_URL = 'https://cdn.jsdelivr.net/npm/jpeg-js@0.4.4/lib/decoder.js';
+  const PAKO_URL = 'https://cdn.jsdelivr.net/npm/pako@1.0.11/dist/pako.min.js';
+  const UPNG_URL = 'https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js';
+  async function rasterAusDatei(datei, bmp) {
+    const b = new Uint8Array(await datei.arrayBuffer());
+    if (b[0] === 0xFF && b[1] === 0xD8) {
+      await ladeSkript(JPEG_URL, () => !!(window['jpeg-js'] && window['jpeg-js'].decode));
+      const r = window['jpeg-js'].decode(b, { useTArray: true, formatAsRGBA: true, maxMemoryUsageInMB: 1024 });
+      return { width: r.width, height: r.height, data: r.data, quelle: 'JPG direkt aus der Datei' };
+    }
+    if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) {
+      await ladeSkript(PAKO_URL, () => !!window.pako);
+      await ladeSkript(UPNG_URL, () => !!window.UPNG);
+      const png = UPNG.decode(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+      return { width: png.width, height: png.height, data: new Uint8Array(UPNG.toRGBA8(png)[0]), quelle: 'PNG direkt aus der Datei' };
+    }
+    const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0);
+    return { width: c.width, height: c.height, data: ctx.getImageData(0, 0, c.width, c.height).data, quelle: 'Canvas (kann in Firefox verfälscht sein)' };
   }
 
-  /* Ausschnitt des Spielbildschirms (Angaben relativ, 0–1) vergrößern und nur helle, ungesättigte Pixel
-     (weiße/graue Schrift) als schwarze Schrift auf Weiß behalten. Farbige Flächen und dunkler Hintergrund fallen weg. */
-  function ausschnitt(bmp, x0, y0, x1, y1, faktor) {
-    const W = bmp.width, H = bmp.height, w = (x1 - x0) * W, h = (y1 - y0) * H;
-    const f = faktor * Math.max(1, 2600 / W);
-    const c = document.createElement('canvas'); c.width = Math.round(w * f); c.height = Math.round(h * f);
-    const ctx = c.getContext('2d'); ctx.drawImage(bmp, x0 * W, y0 * H, w, h, 0, 0, c.width, c.height);
-    const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
-    let tinte = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const mn = Math.min(d[i], d[i + 1], d[i + 2]), mx = Math.max(d[i], d[i + 1], d[i + 2]);
-      const schrift = mn > 130 && mx - mn < 70;
-      d[i] = d[i + 1] = d[i + 2] = schrift ? 0 : 255; if (schrift) tinte++;
-    }
-    ctx.putImageData(img, 0, 0);
-    c.tinte = tinte / (d.length / 4);
-    return c;
+  // Farbwert an einer Stelle (bilinear), Kanal k
+  function abtasten(r, x, y, k) {
+    const W = r.width, H = r.height, d = r.data;
+    const x0 = Math.max(0, Math.min(W - 1, Math.floor(x))), y0 = Math.max(0, Math.min(H - 1, Math.floor(y)));
+    const x1 = Math.min(W - 1, x0 + 1), y1 = Math.min(H - 1, y0 + 1), fx = x - x0, fy = y - y0;
+    const p = (xx, yy) => d[(yy * W + xx) * 4 + k];
+    return (p(x0, y0) * (1 - fx) + p(x1, y0) * fx) * (1 - fy) + (p(x0, y1) * (1 - fx) + p(x1, y1) * fx) * fy;
   }
-  // Prüft verkleinert, ob das Bild Inhalt hat (einfarbig = schwarzer Vollbild-Screenshot oder blockiertes Auslesen)
-  function bildPruefen(bmp) {
-    const c = document.createElement('canvas'); c.width = 96; c.height = 54;
-    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
-    const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    let mn = 255, mx = 0, summe = 0, transparent = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-      mn = Math.min(mn, g); mx = Math.max(mx, g); summe += g; if (d[i + 3] < 10) transparent++;
+
+  /* Ausschnitt (Angaben relativ, 0–1) vergrößern und nur helle, ungesättigte Pixel (weiße/graue Schrift)
+     als schwarze Schrift auf Weiß behalten. Farbige Flächen und dunkler Hintergrund fallen weg. */
+  function ausschnitt(r, x0, y0, x1, y1, faktor) {
+    const W = r.width, H = r.height, f = faktor * Math.max(1, 2600 / W);
+    const sx = x0 * W, sy = y0 * H, w = Math.round((x1 - x0) * W * f), h = Math.round((y1 - y0) * H * f);
+    const g = new Uint8Array(w * h); let tinte = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const qx = sx + (x + 0.5) / f - 0.5, qy = sy + (y + 0.5) / f - 0.5;
+      const R = abtasten(r, qx, qy, 0), G = abtasten(r, qx, qy, 1), B = abtasten(r, qx, qy, 2);
+      const mn = Math.min(R, G, B), mx = Math.max(R, G, B), schrift = mn > 130 && mx - mn < 70;
+      g[y * w + x] = schrift ? 0 : 255; if (schrift) tinte++;
     }
-    const n = d.length / 4, mittel = summe / n;
-    const info = `Bild: ${bmp.width} × ${bmp.height} px · Helligkeit min ${Math.round(mn)} / max ${Math.round(mx)} / Mittel ${Math.round(mittel)} · transparent ${Math.round(transparent / n * 100)} %`;
+    return { w, h, g, tinte: tinte / (w * h) };
+  }
+
+  // Ganzes Bild (Rückfallweg): vergrößern, Graustufen, bei dunklem Hintergrund invertieren
+  function aufbereiten(r) {
+    const f = Math.min(3, Math.max(1, 2400 / r.width));
+    const w = Math.round(r.width * f), h = Math.round(r.height * f), g = new Uint8Array(w * h);
+    let summe = 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const qx = (x + 0.5) / f - 0.5, qy = (y + 0.5) / f - 0.5;
+      const v = 0.299 * abtasten(r, qx, qy, 0) + 0.587 * abtasten(r, qx, qy, 1) + 0.114 * abtasten(r, qx, qy, 2);
+      g[y * w + x] = v; summe += v;
+    }
+    if (summe / (w * h) < 128) for (let i = 0; i < g.length; i++) g[i] = 255 - g[i];
+    return { w, h, g };
+  }
+
+  // Prüft stichprobenartig, ob das Bild Inhalt hat (einfarbig = z. B. schwarzer Vollbild-Screenshot)
+  function bildPruefen(r) {
+    const d = r.data, schritt = Math.max(1, Math.floor(r.width * r.height / 20000));
+    let mn = 255, mx = 0, summe = 0, n = 0, transparent = 0;
+    for (let p = 0; p < r.width * r.height; p += schritt) {
+      const i = p * 4, g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      mn = Math.min(mn, g); mx = Math.max(mx, g); summe += g; n++; if (d[i + 3] < 10) transparent++;
+    }
+    const mittel = summe / n;
+    const info = `Bild: ${r.width} × ${r.height} px (${r.quelle}) · Helligkeit min ${Math.round(mn)} / max ${Math.round(mx)} / Mittel ${Math.round(mittel)} · transparent ${Math.round(transparent / n * 100)} %`;
     let fehler = '';
     if (transparent / n > 0.9) fehler = 'Das Bild ist (fast) komplett durchsichtig – bitte einen normalen Screenshot verwenden.';
     else if (mx - mn < 8 && mittel < 20) fehler = 'Das Bild ist komplett schwarz. Das passiert oft bei Screenshots von Spielen im Vollbild (z. B. mit Win+Umschalt+S). Probier die Xbox Game Bar (Win+Alt+Druck) oder den Steam-Screenshot (F12), bzw. das Spiel im Fenster-/randlosen Modus.';
-    else if (mx - mn < 8) fehler = 'Das Bild kommt einfarbig im Tool an. Wahrscheinlich blockiert der Browser das Auslesen von Bildern (Fingerprinting-Schutz, z. B. in Firefox, LibreWolf oder Brave). Bitte für diese Seite den Schutz ausschalten oder einen anderen Browser probieren.';
+    else if (mx - mn < 8) fehler = 'Das Bild kommt einfarbig im Tool an. Bitte den Screenshot als JPG- oder PNG-Datei verwenden.';
     return { fehler, info };
   }
   function zeigeVorschau(bmp) {
@@ -653,25 +684,20 @@
     c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); c.hidden = false;
   }
 
-  /* Canvas → BMP-Datei, direkt aus den Pixeln gebaut. Tesseract.js würde sonst canvas.toBlob() benutzen –
-     das verfälschen manche Browser/Erweiterungen (Fingerprinting-Schutz), dann wird nur Leere erkannt. */
-  function canvasZuBmp(canvas) {
-    const w = canvas.width, h = canvas.height;
-    const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
-    const zeile = Math.ceil(w * 3 / 4) * 4, groesse = 54 + zeile * h;
-    const buf = new ArrayBuffer(groesse), v = new DataView(buf), b = new Uint8Array(buf);
-    b[0] = 0x42; b[1] = 0x4D; v.setUint32(2, groesse, true); v.setUint32(10, 54, true);
+  // Graustufenbild → BMP-Datei (8 Bit, Graupalette) für Tesseract
+  function grauZuBmp(b) {
+    const { w, h, g } = b, zeile = Math.ceil(w / 4) * 4, kopf = 54 + 1024, groesse = kopf + zeile * h;
+    const buf = new ArrayBuffer(groesse), v = new DataView(buf), u = new Uint8Array(buf);
+    u[0] = 0x42; u[1] = 0x4D; v.setUint32(2, groesse, true); v.setUint32(10, kopf, true);
     v.setUint32(14, 40, true); v.setInt32(18, w, true); v.setInt32(22, h, true);
-    v.setUint16(26, 1, true); v.setUint16(28, 24, true); v.setUint32(34, zeile * h, true);
-    for (let y = 0; y < h; y++) {
-      let o = 54 + (h - 1 - y) * zeile, i = y * w * 4;
-      for (let x = 0; x < w; x++, i += 4) { b[o++] = px[i + 2]; b[o++] = px[i + 1]; b[o++] = px[i]; }
-    }
+    v.setUint16(26, 1, true); v.setUint16(28, 8, true); v.setUint32(34, zeile * h, true); v.setUint32(46, 256, true);
+    for (let i = 0; i < 256; i++) { u[54 + i * 4] = u[55 + i * 4] = u[56 + i * 4] = i; }
+    for (let y = 0; y < h; y++) u.set(g.subarray(y * w, y * w + w), kopf + (h - 1 - y) * zeile);
     return new Blob([buf], { type: 'image/bmp' });
   }
-  async function ocrLies(w, canvas, psm) {
+  async function ocrLies(w, bild, psm) {
     await w.setParameters({ tessedit_pageseg_mode: psm || '3' });
-    return (await w.recognize(canvasZuBmp(canvas))).data.text || '';
+    return (await w.recognize(grauZuBmp(bild))).data.text || '';
   }
 
   const zahlAus = s => { const n = Number(String(s).replace(/\s/g, '').replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
@@ -738,15 +764,15 @@
     return bestScore >= 0.75 ? best : null;
   }
 
-  // Liest Name, Werte und PI aus dem Bild. Gibt zusätzlich zurück, ob überhaupt Text erkannt wurde.
-  async function leseBild(w, bmp, pruef) {
+  // Liest Name, Werte und PI aus dem Bild
+  async function leseBild(w, r, pruef) {
     const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
-    let werte = {}, roh = '', autoText = '';
+    let werte = {}, roh = pruef.info, autoText = '';
     // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
-    const seite = bmp.width / bmp.height;
+    const seite = r.width / r.height;
     if (seite > 1.6 && seite < 1.9) {
       ocrStatus('Lese Fahrzeugwerte …');
-      const cN = ausschnitt(bmp, 0.06, 0.23, 0.29, 0.31, 2), cW = ausschnitt(bmp, 0.62, 0.22, 0.94, 0.72, 2), cP = ausschnitt(bmp, 0.48, 0.64, 0.545, 0.69, 3);
+      const cN = ausschnitt(r, 0.06, 0.23, 0.29, 0.31, 2), cW = ausschnitt(r, 0.62, 0.22, 0.94, 0.72, 2), cP = ausschnitt(r, 0.48, 0.64, 0.545, 0.69, 3);
       const name = await ocrLies(w, cN);
       const stats = await ocrLies(w, cW);
       const piNeu = await ocrLies(w, cP, '7');   // Abzeichen „Neu“
@@ -756,29 +782,18 @@
       const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
       if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
       autoText = name;
-      roh = `${pruef.info}\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
     // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
     if (FELDER.some(k => werte[k] == null)) {
       ocrStatus('Lese ganzes Bild …');
-      const ganz = await ocrLies(w, await aufbereiten(bmp));
+      const ganz = await ocrLies(w, aufbereiten(r));
       const w2 = werteAusText(ganz);
       for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
       if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
-      roh += (roh ? '\n\n[Ganzes Bild]\n' : pruef.info + '\n\n[Ganzes Bild]\n') + ganz.trim();
+      roh += '\n\n[Ganzes Bild]\n' + ganz.trim();
     }
-    const nurText = roh.replace(/\[[^\]]*\]|Bild:[^\n]*|Schrift-Anteil[^\n]*/g, '').replace(/[^A-Za-z0-9]/g, '');
-    const leer = nurText.length < 6;
-    return { werte, roh, autoText, leer };
-  }
-
-  // Erkennt die Texterkennung einen einfachen, sauberen Testtext?
-  async function selbsttest(w) {
-    const c = document.createElement('canvas'); c.width = 600; c.height = 120;
-    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 600, 120);
-    x.fillStyle = '#000'; x.font = 'bold 64px Arial, sans-serif'; x.textBaseline = 'middle'; x.fillText('Test 4711', 30, 62);
-    try { const t = (await ocrLies(w, c, '7')).trim(); return { ok: /4711/.test(t), text: t.slice(0, 40) }; }
-    catch (err) { return { ok: false, text: 'Fehler: ' + err.message }; }
+    return { werte, roh, autoText };
   }
 
   async function verarbeiteBild(datei) {
@@ -787,28 +802,14 @@
       ocrStatus('Lade Texterkennung …');
       const w = await holeWorker();
       const bmp = await createImageBitmap(datei);
-      // Vorschau + Prüfung: Kommt überhaupt ein Bild mit Inhalt an?
-      const pruef = bildPruefen(bmp);
       zeigeVorschau(bmp);
-      if (pruef.fehler) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = pruef.info; ocrStatus(pruef.fehler, 'fehl'); return; }
-      let erg = await leseBild(w, bmp, pruef);
-      let diag = `Version ${OCR_VERSION}`;
-      // Kommt gar kein Text heraus, obwohl das Bild Inhalt hat: Texterkennung selbst prüfen und ggf. neu laden
-      if (erg.leer) {
-        const t1 = await selbsttest(w);
-        diag += ` · Selbsttest: ${t1.ok ? 'ok' : 'fehlgeschlagen'} („${t1.text}“)`;
-        if (!t1.ok) {
-          ocrStatus('Texterkennung lädt ihre Sprachdaten neu …');
-          const w2 = await holeWorker(true);
-          const t2 = await selbsttest(w2);
-          diag += ` · nach Neuladen: ${t2.ok ? 'ok' : 'fehlgeschlagen'} („${t2.text}“)`;
-          erg = await leseBild(w2, bmp, pruef);
-        }
-      }
-      let { werte, roh, autoText } = erg;
-      roh = diag + '\n' + roh;
+      ocrStatus('Lese Bilddatei …');
+      const r = await rasterAusDatei(datei, bmp);
+      const pruef = bildPruefen(r);
+      if (pruef.fehler) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = `Version ${OCR_VERSION}\n` + pruef.info; ocrStatus(pruef.fehler, 'fehl'); return; }
+      const { werte, roh, autoText } = await leseBild(w, r, pruef);
       const text = autoText;
-      ocr.roh.hidden = false; $('pre', ocr.roh).textContent = roh;
+      ocr.roh.hidden = false; $('pre', ocr.roh).textContent = `Version ${OCR_VERSION}\n` + roh;
       const gefuellt = [];
       $$('.ocr-gefuellt', dlg).forEach(x => x.classList.remove('ocr-gefuellt'));
       for (const [k, v] of Object.entries(werte)) {
