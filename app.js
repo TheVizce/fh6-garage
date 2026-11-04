@@ -647,9 +647,25 @@
     c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); c.hidden = false;
   }
 
+  /* Canvas → BMP-Datei, direkt aus den Pixeln gebaut. Tesseract.js würde sonst canvas.toBlob() benutzen –
+     das verfälschen manche Browser/Erweiterungen (Fingerprinting-Schutz), dann wird nur Leere erkannt. */
+  function canvasZuBmp(canvas) {
+    const w = canvas.width, h = canvas.height;
+    const px = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const zeile = Math.ceil(w * 3 / 4) * 4, groesse = 54 + zeile * h;
+    const buf = new ArrayBuffer(groesse), v = new DataView(buf), b = new Uint8Array(buf);
+    b[0] = 0x42; b[1] = 0x4D; v.setUint32(2, groesse, true); v.setUint32(10, 54, true);
+    v.setUint32(14, 40, true); v.setInt32(18, w, true); v.setInt32(22, h, true);
+    v.setUint16(26, 1, true); v.setUint16(28, 24, true); v.setUint32(34, zeile * h, true);
+    for (let y = 0; y < h; y++) {
+      let o = 54 + (h - 1 - y) * zeile, i = y * w * 4;
+      for (let x = 0; x < w; x++, i += 4) { b[o++] = px[i + 2]; b[o++] = px[i + 1]; b[o++] = px[i]; }
+    }
+    return new Blob([buf], { type: 'image/bmp' });
+  }
   async function ocrLies(w, canvas, psm) {
     await w.setParameters({ tessedit_pageseg_mode: psm || '3' });
-    return (await w.recognize(canvas)).data.text || '';
+    return (await w.recognize(canvasZuBmp(canvas))).data.text || '';
   }
 
   const zahlAus = s => { const n = Number(String(s).replace(/\s/g, '').replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.')); return Number.isFinite(n) ? n : null; };
