@@ -225,3 +225,4 @@ textarea#listeEingabe { width: 100%; }
 
 /* Baujahr hinter dem Modellnamen */
 .name .jahr { font-weight: 500; color: var(--leise); font-size: .9em; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.ocr-vorschau { width: 160px; height: auto; border-radius: 6px; border: 1px solid var(--linie); }

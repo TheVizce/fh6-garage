@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261104">
+<link rel="stylesheet" href="style.css?v=20261104b">
 </head>
 <body>
 <header class="kopf">
@@ -96,6 +96,7 @@
           <b>Screenshot einlesen</b>
           <span>Bild hierher ziehen, mit Strg+V einfügen oder <button type="button" class="link" id="ocrWaehlen">Datei wählen</button></span>
         </div>
+        <canvas id="ocrVorschau" class="ocr-vorschau" hidden title="So kommt das Bild im Tool an"></canvas>
         <div id="ocrStatus" class="ocr-status"></div>
       </div>
       <details id="ocrRoh" class="ocr-roh" hidden><summary>Erkannter Text</summary><pre></pre></details>
@@ -208,6 +209,6 @@
 
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261104"></script>
+<script src="app.js?v=20261104b"></script>
 </body>
 </html>

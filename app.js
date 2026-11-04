@@ -575,7 +575,7 @@
   const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   let tessLaden = null, worker = null;
 
-  function ocrReset() { ocr.status.textContent = ''; ocr.status.className = 'ocr-status'; ocr.roh.hidden = true; ocr.roh.open = false; }
+  function ocrReset() { const v = $('#ocrVorschau'); if (v) v.hidden = true; ocr.status.textContent = ''; ocr.status.className = 'ocr-status'; ocr.roh.hidden = true; ocr.roh.open = false; }
   function ocrStatus(t, cls = '') { ocr.status.textContent = t; ocr.status.className = 'ocr-status ' + cls; }
 
   function ladeTesseract() {
@@ -623,6 +623,30 @@
     ctx.putImageData(img, 0, 0);
     return c;
   }
+  // Prüft verkleinert, ob das Bild Inhalt hat (einfarbig = schwarzer Vollbild-Screenshot oder blockiertes Auslesen)
+  function bildPruefen(bmp) {
+    const c = document.createElement('canvas'); c.width = 96; c.height = 54;
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let mn = 255, mx = 0, summe = 0, transparent = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+      mn = Math.min(mn, g); mx = Math.max(mx, g); summe += g; if (d[i + 3] < 10) transparent++;
+    }
+    const n = d.length / 4, mittel = summe / n;
+    const info = `Bild: ${bmp.width} × ${bmp.height} px · Helligkeit min ${Math.round(mn)} / max ${Math.round(mx)} / Mittel ${Math.round(mittel)} · transparent ${Math.round(transparent / n * 100)} %`;
+    let fehler = '';
+    if (transparent / n > 0.9) fehler = 'Das Bild ist (fast) komplett durchsichtig – bitte einen normalen Screenshot verwenden.';
+    else if (mx - mn < 8 && mittel < 20) fehler = 'Das Bild ist komplett schwarz. Das passiert oft bei Screenshots von Spielen im Vollbild (z. B. mit Win+Umschalt+S). Probier die Xbox Game Bar (Win+Alt+Druck) oder den Steam-Screenshot (F12), bzw. das Spiel im Fenster-/randlosen Modus.';
+    else if (mx - mn < 8) fehler = 'Das Bild kommt einfarbig im Tool an. Wahrscheinlich blockiert der Browser das Auslesen von Bildern (Fingerprinting-Schutz, z. B. in Firefox, LibreWolf oder Brave). Bitte für diese Seite den Schutz ausschalten oder einen anderen Browser probieren.';
+    return { fehler, info };
+  }
+  function zeigeVorschau(bmp) {
+    const c = $('#ocrVorschau'); if (!c) return;
+    const f = 160 / bmp.width; c.width = 160; c.height = Math.round(bmp.height * f);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); c.hidden = false;
+  }
+
   async function ocrLies(w, canvas, psm) {
     await w.setParameters({ tessedit_pageseg_mode: psm || '3' });
     return (await w.recognize(canvas)).data.text || '';
@@ -698,6 +722,10 @@
       ocrStatus('Lade Texterkennung …');
       const w = await holeWorker();
       const bmp = await createImageBitmap(datei);
+      // Vorschau + Prüfung: Kommt überhaupt ein Bild mit Inhalt an?
+      const pruef = bildPruefen(bmp);
+      zeigeVorschau(bmp);
+      if (pruef.fehler) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = pruef.info; ocrStatus(pruef.fehler, 'fehl'); return; }
       const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
       let werte = {}, roh = '', autoText = '';
       // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
@@ -712,7 +740,7 @@
         const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
         if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
         autoText = name;
-        roh = `[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+        roh = `${pruef.info}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
       }
       // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
       if (FELDER.some(k => werte[k] == null)) {
@@ -721,7 +749,7 @@
         const w2 = werteAusText(ganz);
         for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
         if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
-        roh += (roh ? '\n\n[Ganzes Bild]\n' : '') + ganz.trim();
+        roh += (roh ? '\n\n[Ganzes Bild]\n' : pruef.info + '\n\n[Ganzes Bild]\n') + ganz.trim();
       }
       const text = autoText;
       ocr.roh.hidden = false; $('pre', ocr.roh).textContent = roh;
