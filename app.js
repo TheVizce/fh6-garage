@@ -587,9 +587,12 @@
     });
     return tessLaden;
   }
-  async function holeWorker() {
+  const OCR_VERSION = '20261104d';
+  async function holeWorker(neuLaden) {
     await ladeTesseract();
+    if (neuLaden && worker) { try { await worker.terminate(); } catch (_) { /* egal */ } worker = null; }
     if (!worker) worker = await Tesseract.createWorker(['deu', 'eng'], 1, {
+      cacheMethod: neuLaden ? 'refresh' : 'write',   // 'refresh' lädt die Sprachdaten neu statt aus dem Zwischenspeicher
       logger: m => { if (m.status === 'recognizing text') ocrStatus('Lese Text … ' + Math.round(m.progress * 100) + ' %'); else if (m.status) ocrStatus('Vorbereitung: ' + m.status); }
     });
     return worker;
@@ -616,11 +619,14 @@
     const c = document.createElement('canvas'); c.width = Math.round(w * f); c.height = Math.round(h * f);
     const ctx = c.getContext('2d'); ctx.drawImage(bmp, x0 * W, y0 * H, w, h, 0, 0, c.width, c.height);
     const img = ctx.getImageData(0, 0, c.width, c.height), d = img.data;
+    let tinte = 0;
     for (let i = 0; i < d.length; i += 4) {
       const mn = Math.min(d[i], d[i + 1], d[i + 2]), mx = Math.max(d[i], d[i + 1], d[i + 2]);
-      d[i] = d[i + 1] = d[i + 2] = (mn > 130 && mx - mn < 70) ? 0 : 255;
+      const schrift = mn > 130 && mx - mn < 70;
+      d[i] = d[i + 1] = d[i + 2] = schrift ? 0 : 255; if (schrift) tinte++;
     }
     ctx.putImageData(img, 0, 0);
+    c.tinte = tinte / (d.length / 4);
     return c;
   }
   // Prüft verkleinert, ob das Bild Inhalt hat (einfarbig = schwarzer Vollbild-Screenshot oder blockiertes Auslesen)
@@ -732,6 +738,49 @@
     return bestScore >= 0.75 ? best : null;
   }
 
+  // Liest Name, Werte und PI aus dem Bild. Gibt zusätzlich zurück, ob überhaupt Text erkannt wurde.
+  async function leseBild(w, bmp, pruef) {
+    const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
+    let werte = {}, roh = '', autoText = '';
+    // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
+    const seite = bmp.width / bmp.height;
+    if (seite > 1.6 && seite < 1.9) {
+      ocrStatus('Lese Fahrzeugwerte …');
+      const cN = ausschnitt(bmp, 0.06, 0.23, 0.29, 0.31, 2), cW = ausschnitt(bmp, 0.62, 0.22, 0.94, 0.72, 2), cP = ausschnitt(bmp, 0.48, 0.64, 0.545, 0.69, 3);
+      const name = await ocrLies(w, cN);
+      const stats = await ocrLies(w, cW);
+      const piNeu = await ocrLies(w, cP, '7');   // Abzeichen „Neu“
+      const pz = c => Math.round(c.tinte * 1000) / 10 + ' %';
+      werte = werteAusText(stats);
+      delete werte.pi;
+      const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
+      if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
+      autoText = name;
+      roh = `${pruef.info}\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+    }
+    // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
+    if (FELDER.some(k => werte[k] == null)) {
+      ocrStatus('Lese ganzes Bild …');
+      const ganz = await ocrLies(w, await aufbereiten(bmp));
+      const w2 = werteAusText(ganz);
+      for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
+      if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
+      roh += (roh ? '\n\n[Ganzes Bild]\n' : pruef.info + '\n\n[Ganzes Bild]\n') + ganz.trim();
+    }
+    const nurText = roh.replace(/\[[^\]]*\]|Bild:[^\n]*|Schrift-Anteil[^\n]*/g, '').replace(/[^A-Za-z0-9]/g, '');
+    const leer = nurText.length < 6;
+    return { werte, roh, autoText, leer };
+  }
+
+  // Erkennt die Texterkennung einen einfachen, sauberen Testtext?
+  async function selbsttest(w) {
+    const c = document.createElement('canvas'); c.width = 600; c.height = 120;
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, 600, 120);
+    x.fillStyle = '#000'; x.font = 'bold 64px Arial, sans-serif'; x.textBaseline = 'middle'; x.fillText('Test 4711', 30, 62);
+    try { const t = (await ocrLies(w, c, '7')).trim(); return { ok: /4711/.test(t), text: t.slice(0, 40) }; }
+    catch (err) { return { ok: false, text: 'Fehler: ' + err.message }; }
+  }
+
   async function verarbeiteBild(datei) {
     if (!datei || !/^image\//.test(datei.type)) { ocrStatus('Das ist kein Bild.', 'fehl'); return; }
     try {
@@ -742,31 +791,22 @@
       const pruef = bildPruefen(bmp);
       zeigeVorschau(bmp);
       if (pruef.fehler) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = pruef.info; ocrStatus(pruef.fehler, 'fehl'); return; }
-      const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
-      let werte = {}, roh = '', autoText = '';
-      // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
-      const seite = bmp.width / bmp.height;
-      if (seite > 1.6 && seite < 1.9) {
-        ocrStatus('Lese Fahrzeugwerte …');
-        const name = await ocrLies(w, ausschnitt(bmp, 0.06, 0.23, 0.29, 0.31, 2));
-        const stats = await ocrLies(w, ausschnitt(bmp, 0.62, 0.22, 0.94, 0.72, 2));
-        const piNeu = await ocrLies(w, ausschnitt(bmp, 0.48, 0.64, 0.545, 0.69, 3), '7');   // Abzeichen „Neu“
-        werte = werteAusText(stats);
-        delete werte.pi;
-        const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
-        if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
-        autoText = name;
-        roh = `${pruef.info}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      let erg = await leseBild(w, bmp, pruef);
+      let diag = `Version ${OCR_VERSION}`;
+      // Kommt gar kein Text heraus, obwohl das Bild Inhalt hat: Texterkennung selbst prüfen und ggf. neu laden
+      if (erg.leer) {
+        const t1 = await selbsttest(w);
+        diag += ` · Selbsttest: ${t1.ok ? 'ok' : 'fehlgeschlagen'} („${t1.text}“)`;
+        if (!t1.ok) {
+          ocrStatus('Texterkennung lädt ihre Sprachdaten neu …');
+          const w2 = await holeWorker(true);
+          const t2 = await selbsttest(w2);
+          diag += ` · nach Neuladen: ${t2.ok ? 'ok' : 'fehlgeschlagen'} („${t2.text}“)`;
+          erg = await leseBild(w2, bmp, pruef);
+        }
       }
-      // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
-      if (FELDER.some(k => werte[k] == null)) {
-        ocrStatus('Lese ganzes Bild …');
-        const ganz = await ocrLies(w, await aufbereiten(bmp));
-        const w2 = werteAusText(ganz);
-        for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
-        if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
-        roh += (roh ? '\n\n[Ganzes Bild]\n' : pruef.info + '\n\n[Ganzes Bild]\n') + ganz.trim();
-      }
+      let { werte, roh, autoText } = erg;
+      roh = diag + '\n' + roh;
       const text = autoText;
       ocr.roh.hidden = false; $('pre', ocr.roh).textContent = roh;
       const gefuellt = [];
