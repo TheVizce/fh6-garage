@@ -390,6 +390,69 @@
       : `${gesamt} Fahrzeuge`;
   }
 
+  /* ---------- Abdeckung: Marken, Typen, PI-Klassen ----------
+     Klasse eines Eintrags = Klasse nach Upgrade (PI des Eintrags), sonst Serienklasse. */
+  const klasseVon = e => klasseVonPi(e.pi ?? autoVon(e).pi) || autoVon(e).k || '';
+  function balken(beschr, wert, max, text, farbe) {
+    const p = max ? Math.round(wert / max * 100) : 0;
+    return `<div class="balken"><span class="b-name" title="${esc(beschr)}">${esc(beschr)}</span><span class="b-spur"><span class="b-fuell" style="width:${p}%;${farbe ? 'background:' + farbe : ''}"></span></span><span class="b-wert">${text}</span></div>`;
+  }
+  function abdeckungListe(schluessel) {
+    const alle = new Map(), drin = new Map();
+    for (const a of liste) { const k = a[schluessel]; if (k) alle.set(k, (alle.get(k) || 0) + 1); }
+    const besessen = new Set(daten.eintraege.map(e => e.autoId));
+    for (const a of liste) if (besessen.has(a.id) && a[schluessel]) drin.set(a[schluessel], (drin.get(a[schluessel]) || 0) + 1);
+    return [...alle].map(([k, n]) => ({ k, n, d: drin.get(k) || 0 }))
+      .sort((x, y) => (y.d / y.n) - (x.d / x.n) || y.d - x.d || x.k.localeCompare(y.k, 'de'));
+  }
+  function renderAbdeckung() {
+    const ein = daten.eintraege;
+    // Kennzahlen
+    const marken = abdeckungListe('m'), typen = abdeckungListe('t');
+    const kombi = new Map();   // "Marke|Typ" → { m, t, k: {Klasse: [uids]} }
+    for (const e of ein) {
+      const a = autoVon(e), m = a.m || '–', t = a.t || '–', kl = klasseVon(e);
+      const key = m + '|' + t;
+      if (!kombi.has(key)) kombi.set(key, { m, t, k: {} });
+      (kombi.get(key).k[kl] = kombi.get(key).k[kl] || []).push(e.uid);
+    }
+    let doppelt = 0;
+    for (const z of kombi.values()) for (const k of KLASSEN) if ((z.k[k] || []).length > 1) doppelt++;
+    $('#abdKpis').innerHTML = [
+      ['Einträge', ein.length],
+      ['Marken', `${marken.filter(x => x.d).length} / ${marken.length}`],
+      ['Autotypen', `${typen.filter(x => x.d).length} / ${typen.length}`],
+      ['Marke + Typ', kombi.size],
+      ['Doppelte Klassen', doppelt, doppelt ? 'warn' : '']
+    ].map(([l, v, c]) => `<div class="kpi ${c || ''}"><span class="kpi-wert">${v}</span><span class="kpi-name">${l}</span></div>`).join('');
+
+    // Matrix Marke × Typ × Klasse
+    const q = norm($('#abdSuche').value).trim(), nurDoppelt = $('#abdDoppelt').checked;
+    let zeilen = [...kombi.values()]
+      .filter(z => !q || q.split(/\s+/).every(w => norm(z.m + ' ' + z.t).includes(w)))
+      .filter(z => !nurDoppelt || KLASSEN.some(k => (z.k[k] || []).length > 1))
+      .sort((x, y) => x.m.localeCompare(y.m, 'de') || x.t.localeCompare(y.t, 'de'));
+    const tb = zeilen.map((z, i) => {
+      const neueMarke = i === 0 || zeilen[i - 1].m !== z.m;
+      const zellen = KLASSEN.map(k => {
+        const n = (z.k[k] || []).length;
+        return n
+          ? `<td class="zelle k-${k} ${n > 1 ? 'doppelt' : 'belegt'}" data-m="${esc(z.m)}" data-t="${esc(z.t)}" data-k="${k}" title="${n} × ${esc(z.m)} · ${esc(z.t)} · ${k}">${n}</td>`
+          : `<td class="zelle frei" data-m="${esc(z.m)}" data-t="${esc(z.t)}" title="Frei: ${esc(z.m)} · ${esc(z.t)} · ${k} – im Katalog suchen"></td>`;
+      }).join('');
+      const belegt = KLASSEN.filter(k => z.k[k]).length;
+      return `<tr class="${neueMarke ? 'neue-marke' : ''}"><th class="m">${neueMarke ? esc(z.m) : ''}</th><th class="t">${esc(z.t)}</th>${zellen}<td class="summe">${belegt}</td></tr>`;
+    }).join('');
+    $('#abdMatrix').innerHTML = `<thead><tr><th>Marke</th><th>Typ</th>${KLASSEN.map(k => `<th class="kl"><span class="badge k-${k}"><span class="k">${k}</span></span></th>`).join('')}<th class="summe" title="Belegte Klassen">Kl.</th></tr></thead><tbody>${tb || `<tr><td colspan="${KLASSEN.length + 3}" class="leise" style="padding:16px">${ein.length ? 'Keine passenden Einträge.' : 'Noch keine Autos in der Garage.'}</td></tr>`}</tbody>`;
+
+    // Balken: Klassen, Marken, Typen
+    const proKlasse = KLASSEN.map(k => ({ k, n: ein.filter(e => klasseVon(e) === k).length }));
+    const maxK = Math.max(1, ...proKlasse.map(x => x.n));
+    $('#abdKlassen').innerHTML = proKlasse.map(x => balken(x.k, x.n, maxK, x.n, `var(--k${x.k})`)).join('');
+    $('#abdMarken').innerHTML = marken.map(x => balken(x.k, x.d, x.n, `${x.d}/${x.n}`)).join('');
+    $('#abdTypen').innerHTML = typen.map(x => balken(x.k, x.d, x.n, `${x.d}/${x.n}`)).join('');
+  }
+
   function renderStat() {
     const anz = anzahlProAuto();
     const besessen = liste.filter(a => anz.has(a.id)).length;
@@ -404,7 +467,8 @@
     $$('.tab').forEach(t => t.classList.toggle('aktiv', t.dataset.tab === ui.tab));
     $('#ansichtGarage').hidden = ui.tab !== 'garage';
     $('#ansichtKatalog').hidden = ui.tab !== 'katalog';
-    if (ui.tab === 'garage') renderGarage(); else renderKatalog();
+    $('#ansichtAbdeckung').hidden = ui.tab !== 'abdeckung';
+    if (ui.tab === 'garage') renderGarage(); else if (ui.tab === 'katalog') renderKatalog(); else renderAbdeckung();
     renderStat();
   }
 
@@ -925,6 +989,18 @@
 
   /* ---------- Ereignisse Hauptansicht ---------- */
   $$('.tab').forEach(t => t.addEventListener('click', () => { ui.tab = t.dataset.tab; uiSpeichern(); fuelleSort(); render(); }));
+  ['#abdSuche', '#abdDoppelt'].forEach(s => $(s).addEventListener('input', renderAbdeckung));
+  // Klick in der Matrix: belegte Zelle → Garage gefiltert, freie Zelle → Katalog mit Marke + Typ
+  $('#abdMatrix').addEventListener('click', ev => {
+    const td = ev.target.closest('td.zelle'); if (!td) return;
+    [f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo].forEach(x => { x.value = ''; });
+    f.fav.checked = false;
+    f.suche.value = td.dataset.m === '–' ? '' : td.dataset.m;
+    if ([...f.typ.options].some(o => o.value === td.dataset.t)) f.typ.value = td.dataset.t;
+    if (td.dataset.k) { ui.tab = 'garage'; f.klasse.value = td.dataset.k; }
+    else ui.tab = 'katalog';
+    uiSpeichern(); fuelleSort(); render(); window.scrollTo(0, 0);
+  });
   $('#btnNeu').addEventListener('click', () => oeffneDialog(null));
   [f.suche, f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo, f.fav].forEach(x => x.addEventListener('input', render));
   f.sort.addEventListener('change', () => { if (ui.tab === 'garage') ui.sortG = f.sort.value; else ui.sortK = f.sort.value; uiSpeichern(); render(); });

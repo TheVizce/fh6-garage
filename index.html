@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261104e">
+<link rel="stylesheet" href="style.css?v=20261105">
 </head>
 <body>
 <header class="kopf">
@@ -23,6 +23,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab aktiv" data-tab="garage" role="tab">Meine Garage</button>
     <button class="tab" data-tab="katalog" role="tab">Katalog</button>
+    <button class="tab" data-tab="abdeckung" role="tab">Abdeckung</button>
   </nav>
   <div class="kopf-aktionen">
     <button id="btnNeu" class="btn primaer">+ Fahrzeug</button>
@@ -78,6 +79,31 @@
       </table>
     </div>
     <p id="mehrKatalog" class="hinweis"></p>
+  </section>
+
+  <section id="ansichtAbdeckung" hidden>
+    <div id="abdKpis" class="abd-kpis"></div>
+
+    <div class="karte">
+      <div class="karte-kopf">
+        <h3>Marke × Typ × PI-Klasse</h3>
+        <div class="karte-aktionen">
+          <input id="abdSuche" type="search" placeholder="Marke oder Typ …" autocomplete="off">
+          <label class="chk"><input id="abdDoppelt" type="checkbox"> nur mit Doppelten</label>
+        </div>
+      </div>
+      <p class="hinweis legende">
+        <span class="lg lg-1">1</span> belegt · <span class="lg lg-2">2+</span> gleiche Marke, gleicher Typ, gleiche Klasse · <span class="lg lg-0"></span> noch frei.
+        Klick auf eine Zahl zeigt die Autos in der Garage, Klick auf ein freies Feld die passenden Autos im Katalog.
+      </p>
+      <div class="matrix-wrap"><table class="matrix" id="abdMatrix"></table></div>
+    </div>
+
+    <div class="abd-raster">
+      <div class="karte"><h3>Einträge je PI-Klasse</h3><div id="abdKlassen" class="balken-liste"></div></div>
+      <div class="karte"><h3>Marken</h3><p class="hinweis">Modelle in der Garage von allen Modellen der Marke</p><div id="abdMarken" class="balken-liste scroll"></div></div>
+      <div class="karte"><h3>Autotypen</h3><p class="hinweis">Modelle in der Garage von allen Modellen des Typs</p><div id="abdTypen" class="balken-liste scroll"></div></div>
+    </div>
   </section>
 </main>
 
@@ -209,6 +235,6 @@
 
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261104e"></script>
+<script src="app.js?v=20261105"></script>
 </body>
 </html>
