@@ -371,3 +371,6 @@ table.vergleich { border-collapse: collapse; width: 100%; font-size: 14px; }
 .dlg-bild::backdrop { background: rgba(6,4,10,.88); }
 .dlg-bild img { display: block; max-width: 96vw; max-height: 92vh; border-radius: 8px; cursor: zoom-out; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
 .bild-zu { position: absolute; top: 8px; right: 8px; background: rgba(20,17,28,.85); }
+
+.filter-reset { color: var(--akzent); border-color: rgba(255,46,136,.5); background: transparent; }
+.filter-reset[hidden] { display: none; }

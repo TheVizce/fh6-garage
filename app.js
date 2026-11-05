@@ -556,8 +556,14 @@
       : `${daten.eintraege.length} Einträge`;
   }
 
+  // Alle Filter (nicht die Sortierung) auf „alle“ zurücksetzen
+  const FILTER = () => [f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo];
+  function filterAktiv() { return !!(f.suche.value.trim() || f.fav.checked || FILTER().some(x => x.value)); }
+  function filterZuruecksetzen() { f.suche.value = ''; f.fav.checked = false; FILTER().forEach(x => { x.value = ''; }); }
+
   function render() {
     document.body.dataset.tab = ui.tab;
+    $('#fReset').hidden = !filterAktiv();
     $$('.tab').forEach(t => t.classList.toggle('aktiv', t.dataset.tab === ui.tab));
     $('#ansichtGarage').hidden = ui.tab !== 'garage';
     $('#ansichtKatalog').hidden = ui.tab !== 'katalog';
@@ -1380,6 +1386,7 @@
   });
   $('#btnNeu').addEventListener('click', () => oeffneDialog(null));
   [f.suche, f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo, f.fav].forEach(x => x.addEventListener('input', render));
+  $('#fReset').addEventListener('click', () => { filterZuruecksetzen(); render(); });
   f.sort.addEventListener('change', () => { if (ui.tab === 'garage') ui.sortG = f.sort.value; else ui.sortK = f.sort.value; uiSpeichern(); render(); });
   $('#tabGarage tbody').addEventListener('click', ev => {
     const cb = ev.target.closest('.vgl-wahl');
