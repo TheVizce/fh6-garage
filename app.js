@@ -983,8 +983,18 @@
       autoText = name;
       roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
-    // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
-    if (FELDER.some(k => werte[k] == null)) {
+    // 1b. Name nicht erkannt (z. B. graue Schrift auf hellem/farbigem Hintergrund): Namensbereich nochmal
+    //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
+    if (seite > 1.6 && seite < 1.9 && !autoAusText(autoText)) {
+      ocrMelder('Lese Fahrzeugnamen erneut …');
+      for (const [psm, f] of [['6', 3], ['11', 3]]) {
+        const t = await ocrLies(w, ausschnitt(r, 0.06, 0.23, 0.29, 0.31, f), psm);
+        roh += `\n\n[Name, Versuch psm ${psm}]\n${t.trim()}`;
+        if (autoAusText(t)) { autoText = t; break; }
+      }
+    }
+    // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte (oder den Namen) ergänzen
+    if (FELDER.some(k => werte[k] == null) || !autoAusText(autoText)) {
       ocrMelder('Lese ganzes Bild …');
       const ganz = await ocrLies(w, aufbereiten(r));
       const w2 = werteAusText(ganz);
@@ -1018,6 +1028,8 @@
 
   async function verarbeiteBild(datei) {
     try {
+      if (einzelBildUrl) URL.revokeObjectURL(einzelBildUrl);
+      einzelBildUrl = datei && /^image\//.test(datei.type) ? URL.createObjectURL(datei) : null;
       const erg = await erkenneBild(datei, t => ocrStatus(t));
       if (erg.bmp) zeigeVorschau(erg.bmp);
       if (erg.roh) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = erg.roh; }
@@ -1049,6 +1061,15 @@
     if (item) { ev.preventDefault(); verarbeiteBild(item.getAsFile()); }
   });
 
+  /* ---------- Screenshot groß anzeigen (Klick aufs Bild, Klick daneben oder Esc schließt) ---------- */
+  const dlgB = $('#dlgBild');
+  function zeigeGross(url) { if (!url) return; $('#bildGross').src = url; dlgB.showModal(); }
+  dlgB.addEventListener('click', ev => { if (ev.target === dlgB || ev.target.id === 'bildGross') dlgB.close(); });
+  dlgB.addEventListener('close', () => { $('#bildGross').removeAttribute('src'); });
+  // Vorschau im Einzel-Dialog: Datei merken, damit sie groß angezeigt werden kann
+  let einzelBildUrl = null;
+  $('#ocrVorschau').addEventListener('click', () => zeigeGross(einzelBildUrl));
+
   /* ---------- Stapel-Import: mehrere Screenshots → Entwürfe ----------
      Entwürfe liegen nur im Arbeitsspeicher. Übernommen wird erst mit „Übernehmen“ (ein Speichervorgang). */
   const dlgS = $('#dlgStapel');
@@ -1075,7 +1096,7 @@
       : d.status === 'fehler' ? `<span class="fehl">${esc(d.meldung)}</span>` : '';
     const fertig = d.status === 'fertig';
     return `<div class="entwurf ${d.status}${fertig && !d.autoId ? ' unklar' : ''}" data-id="${d.id}">
-      <img src="${d.url}" alt="" loading="lazy">
+      <img src="${d.url}" alt="Screenshot – zum Vergrößern klicken" title="Zum Vergrößern klicken" class="ew-bild" loading="lazy">
       <div class="ew-haupt">
         <div class="ew-zeile">
           <input class="ew-auto" list="stapelAutos" placeholder="Fahrzeug wählen …" value="${a ? esc(a.n) : ''}" ${fertig ? '' : 'disabled'}>
@@ -1156,6 +1177,7 @@
     if (bilder.length) { ev.preventDefault(); stapelHinzu(bilder); }
   });
   $('#stapelListe').addEventListener('click', ev => {
+    const bild = ev.target.closest('.ew-bild'); if (bild) { zeigeGross(bild.src); return; }
     const w = ev.target.closest('.ew-weg'); if (!w) return;
     const id = w.closest('.entwurf').dataset.id, d = entwuerfe.find(x => x.id === id);
     if (d) URL.revokeObjectURL(d.url);
