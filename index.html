@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261105">
+<link rel="stylesheet" href="style.css?v=20261105b">
 </head>
 <body>
 <header class="kopf">
@@ -21,11 +21,13 @@
     </div>
   </div>
   <nav class="tabs" role="tablist">
-    <button class="tab aktiv" data-tab="garage" role="tab">Meine Garage</button>
+    <button class="tab aktiv" data-tab="garage" role="tab"><span class="nur-breit">Meine </span>Garage</button>
     <button class="tab" data-tab="katalog" role="tab">Katalog</button>
     <button class="tab" data-tab="abdeckung" role="tab">Abdeckung</button>
+    <button class="tab" data-tab="rennen" role="tab">Rennen</button>
   </nav>
   <div class="kopf-aktionen">
+    <button id="btnStapel" class="btn" title="Mehrere Screenshots auf einmal einlesen">⇪ Screenshots</button>
     <button id="btnNeu" class="btn primaer">+ Fahrzeug</button>
     <button id="btnEinst" class="btn icon" title="Daten &amp; Einstellungen" aria-label="Daten und Einstellungen">⚙</button>
   </div>
@@ -59,7 +61,7 @@
     <div class="tabelle-wrap">
       <table class="liste" id="tabGarage">
         <thead><tr>
-          <th></th><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Upgrade</th>
+          <th class="vgl-kopf" title="Zum Vergleichen auswählen">⇄</th><th></th><th>Fahrzeug</th><th>Land</th><th>Typ</th><th>Serie</th><th>Upgrade</th>
           <th class="zahl">km/h</th><th class="zahl">0–100</th><th class="zahl">kW</th><th class="zahl">kg</th><th>Reifen</th><th>Antrieb</th>
         </tr></thead>
         <tbody></tbody>
@@ -105,6 +107,49 @@
       <div class="karte"><h3>Autotypen</h3><p class="hinweis">Modelle in der Garage von allen Modellen des Typs</p><div id="abdTypen" class="balken-liste scroll"></div></div>
     </div>
   </section>
+
+  <section id="ansichtRennen" hidden>
+    <div class="karte">
+      <div class="karte-kopf">
+        <h3>Event-Finder</h3>
+        <button type="button" id="evReset" class="btn klein">Vorgaben zurücksetzen</button>
+      </div>
+      <p class="hinweis">Gib die Vorgaben einer Herausforderung ein. Leere Felder sind egal.</p>
+      <div class="ev-form">
+        <label>Klasse<select id="evKlasse"></select></label>
+        <label>Typ<select id="evTyp"></select></label>
+        <label>Marke<select id="evMarke"></select></label>
+        <label>Land<select id="evLand"></select></label>
+        <label>Baujahr ab<input id="evVon" type="number" min="1900" max="2100" inputmode="numeric" placeholder="z. B. 1970"></label>
+        <label>Baujahr bis<input id="evBis" type="number" min="1900" max="2100" inputmode="numeric" placeholder="z. B. 1999"></label>
+        <label>Antrieb<select id="evAntrieb"></select></label>
+        <label>Reifen<select id="evReifen"></select></label>
+        <label>Sortieren<select id="evSort">
+          <option value="a100">0–100 (schnellste)</option>
+          <option value="vmax">Höchstgeschw.</option>
+          <option value="pi">PI (hoch)</option>
+          <option value="kw">Leistung</option>
+        </select></label>
+      </div>
+      <div id="evErgebnis"></div>
+    </div>
+
+    <div class="karte">
+      <div class="karte-kopf">
+        <h3>Bestenliste pro Klasse</h3>
+        <div class="karte-aktionen">
+          <label class="ev-inline">Nach <select id="blWert">
+            <option value="a100">0–100 (schnellste)</option>
+            <option value="vmax">Höchstgeschw.</option>
+            <option value="kw">Leistung</option>
+          </select></label>
+          <label class="ev-inline">Plätze <select id="blAnzahl"><option>1</option><option selected>3</option><option>5</option></select></label>
+        </div>
+      </div>
+      <p class="hinweis">Klasse nach Upgrade. Straße = alle Typen außer Rally, Offroad und Drift. Nur Einträge, bei denen der Wert eingetragen ist.</p>
+      <div class="matrix-wrap"><table class="bestenliste" id="blTabelle"></table></div>
+    </div>
+  </section>
 </main>
 
 <!-- Fahrzeug bearbeiten -->
@@ -132,6 +177,7 @@
         <input id="eAutoSuche" type="search" placeholder="Modell suchen …">
         <ul id="autoTreffer" class="treffer" hidden></ul>
         <div id="eAutoInfo" class="auto-info"></div>
+        <div id="eVorhanden" class="vorhanden" hidden></div>
         <button type="button" class="link" id="eEigenesBtn">Fahrzeug nicht in der Liste? Eigenes anlegen</button>
       </div>
 
@@ -174,6 +220,34 @@
       <button type="submit" id="eSpeichern" class="btn primaer">Speichern</button>
     </footer>
   </form>
+</dialog>
+
+<!-- Mehrere Screenshots einlesen -->
+<dialog id="dlgStapel" class="dlg breit">
+  <div class="dlg-kopf">
+    <h2>Screenshots einlesen</h2>
+    <button type="button" class="btn icon" data-schliessen aria-label="Schließen">✕</button>
+  </div>
+  <div class="dlg-inhalt">
+    <div id="stapelZone" class="ocr-zone">
+      <input id="stapelDateien" type="file" accept="image/*" multiple hidden>
+      <input id="stapelOrdner" type="file" webkitdirectory multiple hidden>
+      <div class="ocr-text">
+        <b>Mehrere Screenshots vom Tuning-Bildschirm</b>
+        <span>Hierher ziehen, mit Strg+V einfügen, <button type="button" class="link" id="stapelWaehlen">Dateien wählen</button> oder <button type="button" class="link" id="stapelOrdnerWaehlen">ganzen Ordner wählen</button></span>
+      </div>
+      <div id="stapelStatus" class="ocr-status"></div>
+    </div>
+    <p class="hinweis">Jeder Screenshot wird zu einem Entwurf. Prüf Fahrzeug und Werte, wähl bei schon vorhandenen Autos „aktualisieren“ oder „neuer Build“ und übernimm dann alle auf einmal. Entwürfe bleiben nur, solange die Seite offen ist.</p>
+    <datalist id="stapelAutos"></datalist>
+    <div id="stapelListe" class="stapel-liste"></div>
+  </div>
+  <footer class="dlg-fuss">
+    <button type="button" id="stapelLeeren" class="btn">Liste leeren</button>
+    <span class="raum"></span>
+    <span id="stapelZaehler" class="hinweis"></span>
+    <button type="button" id="stapelUebernehmen" class="btn primaer" disabled>Übernehmen</button>
+  </footer>
 </dialog>
 
 <!-- Einstellungen -->
@@ -233,8 +307,26 @@
   </form>
 </dialog>
 
+<div id="vglLeiste" class="vgl-leiste" hidden>
+  <span id="vglText"></span>
+  <button type="button" id="vglStart" class="btn primaer klein">Vergleichen</button>
+  <button type="button" id="vglAus" class="btn klein" title="Auswahl aufheben">✕</button>
+</div>
+
+<!-- Builds vergleichen -->
+<dialog id="dlgVergleich" class="dlg breit">
+  <div class="dlg-kopf">
+    <h2>Vergleich</h2>
+    <button type="button" class="btn icon" data-schliessen aria-label="Schließen">✕</button>
+  </div>
+  <div class="dlg-inhalt">
+    <div class="matrix-wrap"><table class="vergleich" id="vglTabelle"></table></div>
+    <p class="hinweis">Grün = bester Wert der Auswahl.</p>
+  </div>
+</dialog>
+
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261105"></script>
+<script src="app.js?v=20261105b"></script>
 </body>
 </html>

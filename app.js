@@ -336,6 +336,7 @@
     tb.innerHTML = arr.map(e => {
       const a = autoVon(e);
       return `<tr data-uid="${esc(e.uid)}">
+        <td class="vgl"><input type="checkbox" class="vgl-wahl" data-uid="${esc(e.uid)}" ${vergleich.has(e.uid) ? 'checked' : ''} aria-label="Zum Vergleichen auswählen"></td>
         <td class="stern">${e.fav ? '★' : ''}</td>
         <td class="name"><b>${nameHtml(a)}${hatPromo(e.autoId) ? ' <span class="promo-mini" title="Horizon Promo fotografiert">📷</span>' : ''}</b>${e.build ? `<span class="build">${esc(e.build)}</span>` : ''}${e.design ? `<span class="design" title="Design / Lackierung">🎨 ${esc(e.design)}</span>` : ''}</td>
         <td class="mob-weg">${esc(a.l || '')}</td>
@@ -416,6 +417,8 @@
       if (!kombi.has(key)) kombi.set(key, { m, t, k: {} });
       (kombi.get(key).k[kl] = kombi.get(key).k[kl] || []).push(e.uid);
     }
+    // Modelle aus der Liste, die in der Garage stehen, aber für Horizon Promo noch nicht fotografiert sind
+    const nichtFoto = new Set(ein.filter(x => nachId.has(x.autoId) && !hatPromo(x.autoId)).map(x => x.autoId)).size;
     let doppelt = 0;
     for (const z of kombi.values()) for (const k of KLASSEN) if ((z.k[k] || []).length > 1) doppelt++;
     $('#abdKpis').innerHTML = [
@@ -423,8 +426,9 @@
       ['Marken', `${marken.filter(x => x.d).length} / ${marken.length}`],
       ['Autotypen', `${typen.filter(x => x.d).length} / ${typen.length}`],
       ['Marke + Typ', kombi.size],
-      ['Doppelte Klassen', doppelt, doppelt ? 'warn' : '']
-    ].map(([l, v, c]) => `<div class="kpi ${c || ''}"><span class="kpi-wert">${v}</span><span class="kpi-name">${l}</span></div>`).join('');
+      ['Doppelte Klassen', doppelt, doppelt ? 'warn' : ''],
+      ['In Garage, nicht fotografiert', nichtFoto, 'link', 'promo']
+    ].map(([l, v, c, aktion]) => `<div class="kpi ${c || ''}"${aktion ? ` data-kpi="${aktion}" role="button" tabindex="0" title="In der Garage anzeigen"` : ''}><span class="kpi-wert">${v}</span><span class="kpi-name">${l}${aktion ? ' →' : ''}</span></div>`).join('');
 
     // Matrix Marke × Typ × Klasse
     const q = norm($('#abdSuche').value).trim(), nurDoppelt = $('#abdDoppelt').checked;
@@ -453,6 +457,96 @@
     $('#abdTypen').innerHTML = typen.map(x => balken(x.k, x.d, x.n, `${x.d}/${x.n}`)).join('');
   }
 
+  /* ---------- Rennen: Event-Finder und Bestenliste ----------
+     Vorgaben liegen in ui.event (klein, localStorage). Klasse eines Eintrags = nach Upgrade, sonst Serie. */
+  const KATEGORIEN = ['Straße', 'Rally', 'Offroad', 'Drift'];
+  const kategorieVon = t => /Rally/.test(t || '') ? 'Rally'
+    : /^(Buggies|Offroad|Pickups & 4x4's|UTV's|Unlimited Buggies|Unlimited Offroad)$/.test(t || '') ? 'Offroad'
+    : t === 'Drift Cars' ? 'Drift' : 'Straße';
+  const EV_FELDER = ['klasse', 'typ', 'marke', 'land', 'von', 'bis', 'antrieb', 'reifen', 'sort'];
+  ui.event = Object.assign({ sort: 'a100' }, ui.event || {});
+  const ev = Object.fromEntries(EV_FELDER.map(k => [k, $('#ev' + k[0].toUpperCase() + k.slice(1))]));
+  function fuelleEventFilter() {
+    const autos = [...liste, ...daten.eintraege.map(x => x.auto || {})];
+    const werte = s => [...new Set(autos.map(a => a[s]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+    optionen(ev.klasse, KLASSEN, 'egal'); optionen(ev.typ, werte('t'), 'egal'); optionen(ev.marke, werte('m'), 'egal');
+    optionen(ev.land, werte('l'), 'egal'); optionen(ev.antrieb, ANTRIEB, 'egal'); optionen(ev.reifen, REIFEN, 'egal');
+    for (const k of EV_FELDER) if (ui.event[k] != null) ev[k].value = ui.event[k];
+  }
+  const nachWert = (feld) => feld === 'a100' ? (x, y) => (x.a100 ?? Infinity) - (y.a100 ?? Infinity)
+    : feld === 'pi' ? (x, y) => (y.pi ?? autoVon(y).pi ?? -1) - (x.pi ?? autoVon(x).pi ?? -1)
+    : (x, y) => (y[feld] ?? -Infinity) - (x[feld] ?? -Infinity);
+  function evZeile(x) {
+    const a = autoVon(x);
+    const w = [x.vmax != null ? fmt(x.vmax, 0) + ' km/h' : '', x.a100 != null ? fmt(x.a100, 2) + ' s' : '', x.kw != null ? fmt(x.kw, 0) + ' kW' : ''].filter(Boolean).join(' · ');
+    return `<div class="ev-zeile" data-uid="${esc(x.uid)}">
+      <span class="ev-name"><b>${nameHtml(a)}</b>${x.build ? ` <span class="build">${esc(x.build)}</span>` : ''}<small>${esc(a.t || '')}</small></span>
+      <span>${badge(x.pi ?? a.pi, x.pi != null ? null : a.k)}</span>
+      <span class="ev-werte">${w || '<span class="leise">keine Werte</span>'}</span>
+      <span class="ev-tags">${x.antrieb ? `<span class="tag">${esc(x.antrieb)}</span>` : ''}${x.reifen ? `<span class="tag">${esc(x.reifen)}</span>` : ''}</span>
+    </div>`;
+  }
+  function evKatalogZeile(a) {
+    return `<div class="ev-zeile" data-auto="${esc(a.id)}">
+      <span class="ev-name"><b>${nameHtml(a)}</b><small>${esc(a.t)}</small></span>
+      <span>${badge(a.pi, a.k)}</span>
+      <span class="ev-werte">${(a.b || []).map(b => `<span class="tag">${esc(b)}</span>`).join('')}${a.a ? `<span class="tag dlc">${esc(a.a)}</span>` : ''}</span>
+      <span class="ev-tags"><button class="btn klein" data-neu="${esc(a.id)}">+ Garage</button></span>
+    </div>`;
+  }
+  function evBlock(titel, hinweis, zeilen, max, html) {
+    if (!zeilen.length) return '';
+    const mehr = zeilen.length > max ? `<p class="hinweis">… und ${zeilen.length - max} weitere</p>` : '';
+    return `<div class="ev-block"><h4>${titel} <span class="anzahl">${zeilen.length}</span></h4>${hinweis ? `<p class="hinweis">${hinweis}</p>` : ''}${zeilen.slice(0, max).map(html).join('')}${mehr}</div>`;
+  }
+  function renderRennen() {
+    fuelleEventFilter();
+    const v = ui.event, kIdx = v.klasse ? KLASSEN.indexOf(v.klasse) : -1;
+    const von = zahl(v.von), bis = zahl(v.bis);
+    const passtA = a => (!v.typ || a.t === v.typ) && (!v.marke || a.m === v.marke) && (!v.land || a.l === v.land)
+      && (von == null || (jahrVon(a) || 0) >= von) && (bis == null || (jahrVon(a) || 9999) <= bis);
+    const irgendwas = EV_FELDER.some(k => k !== 'sort' && v[k]);
+    let html = '';
+    if (!irgendwas) html = '<p class="leer">Wähle mindestens eine Vorgabe, z. B. Klasse und Typ.</p>';
+    else {
+      const kandidaten = daten.eintraege.filter(x => passtA(autoVon(x)) && (!v.antrieb || x.antrieb === v.antrieb) && (!v.reifen || x.reifen === v.reifen));
+      const sortiert = arr => arr.sort(nachWert(v.sort || 'a100'));
+      const direkt = sortiert(kandidaten.filter(x => kIdx < 0 || klasseVon(x) === v.klasse));
+      const hoch = kIdx < 0 ? [] : sortiert(kandidaten.filter(x => KLASSEN.indexOf(klasseVon(x)) < kIdx && KLASSEN.indexOf(klasseVon(x)) >= 0));
+      const besessen = new Set(daten.eintraege.map(x => x.autoId));
+      const kaufen = liste.filter(a => passtA(a) && !besessen.has(a.id) && (kIdx < 0 || KLASSEN.indexOf(a.k) <= kIdx))
+        .sort((x, y) => (y.pi || 0) - (x.pi || 0));
+      html = evBlock('In deiner Garage', v.klasse ? `aktuell Klasse ${v.klasse}` : '', direkt, 40, evZeile)
+        + evBlock('Ließe sich hochrüsten', `passt sonst, ist aber unter ${v.klasse} – bräuchte einen weiteren Build`, hoch, 15, evZeile)
+        + evBlock('Noch nicht in der Garage', (v.antrieb || v.reifen ? 'Antrieb und Reifen kann der Katalog nicht prüfen. ' : '') + (v.klasse ? `Serie in Klasse ${v.klasse} oder darunter` : ''), kaufen, 20, evKatalogZeile);
+      if (!direkt.length && !hoch.length && !kaufen.length) html = '<p class="leer">Kein Auto passt zu diesen Vorgaben.</p>';
+      else if (!direkt.length) html = `<p class="hinweis warnung">Kein Auto in deiner Garage passt direkt.</p>` + html;
+    }
+    $('#evErgebnis').innerHTML = html;
+    renderBestenliste();
+  }
+  function renderBestenliste() {
+    const feld = $('#blWert').value, n = Number($('#blAnzahl').value);
+    const einheit = { a100: x => fmt(x.a100, 2) + ' s', vmax: x => fmt(x.vmax, 0) + ' km/h', kw: x => fmt(x.kw, 0) + ' kW' }[feld];
+    const mitWert = daten.eintraege.filter(x => x[feld] != null);
+    const zeilen = KLASSEN.map(k => {
+      const zellen = KATEGORIEN.map(kat => {
+        const top = mitWert.filter(x => klasseVon(x) === k && kategorieVon(autoVon(x).t) === kat).sort(nachWert(feld)).slice(0, n);
+        return `<td>${top.map((x, i) => `<div class="bl-eintrag" data-uid="${esc(x.uid)}"><span class="bl-platz">${i + 1}</span><span class="bl-name">${esc(modell(autoVon(x)))}${x.build ? ` <span class="build">${esc(x.build)}</span>` : ''}</span><span class="bl-wert">${einheit(x)}</span></div>`).join('') || '<span class="leise">–</span>'}</td>`;
+      }).join('');
+      return `<tr><th>${badge(null, k)}</th>${zellen}</tr>`;
+    }).join('');
+    $('#blTabelle').innerHTML = `<thead><tr><th>Klasse</th>${KATEGORIEN.map(k => `<th>${k}</th>`).join('')}</tr></thead><tbody>${zeilen}</tbody>`;
+  }
+  EV_FELDER.forEach(k => ev[k].addEventListener('input', () => { ui.event[k] = ev[k].value; uiSpeichern(); renderRennen(); }));
+  $('#evReset').addEventListener('click', () => { ui.event = { sort: ui.event.sort || 'a100' }; uiSpeichern(); EV_FELDER.forEach(k => { if (k !== 'sort') ev[k].value = ''; }); renderRennen(); });
+  ['#blWert', '#blAnzahl'].forEach(sel => $(sel).addEventListener('input', renderBestenliste));
+  $('#ansichtRennen').addEventListener('click', ev_ => {
+    const neuB = ev_.target.closest('[data-neu]'); if (neuB) { oeffneDialog(null, neuB.dataset.neu); return; }
+    const z = ev_.target.closest('[data-uid]'); if (z) { const x = daten.eintraege.find(y => y.uid === z.dataset.uid); if (x) oeffneDialog(x); return; }
+    const k = ev_.target.closest('[data-auto]'); if (k) oeffneDialog(null, k.dataset.auto);
+  });
+
   function renderStat() {
     const anz = anzahlProAuto();
     const besessen = liste.filter(a => anz.has(a.id)).length;
@@ -468,7 +562,12 @@
     $('#ansichtGarage').hidden = ui.tab !== 'garage';
     $('#ansichtKatalog').hidden = ui.tab !== 'katalog';
     $('#ansichtAbdeckung').hidden = ui.tab !== 'abdeckung';
-    if (ui.tab === 'garage') renderGarage(); else if (ui.tab === 'katalog') renderKatalog(); else renderAbdeckung();
+    $('#ansichtRennen').hidden = ui.tab !== 'rennen';
+    if (ui.tab === 'garage') renderGarage();
+    else if (ui.tab === 'katalog') renderKatalog();
+    else if (ui.tab === 'abdeckung') renderAbdeckung();
+    else renderRennen();
+    vergleichLeiste();
     renderStat();
   }
 
@@ -483,7 +582,7 @@
     suche: $('#eAutoSuche'), treffer: $('#autoTreffer'), info: $('#eAutoInfo'), eigenesBtn: $('#eEigenesBtn'), eigenes: $('#eEigenes'),
     build: $('#eBuild'), design: $('#eDesign'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
     reifen: $('#eReifen'), antrieb: $('#eAntrieb'), kw: $('#eKw'), kg: $('#eKg'), nm: $('#eNm'),
-    code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'),
+    code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'), vorhanden: $('#eVorhanden'),
     xMarke: $('#xMarke'), xName: $('#xName'), xLand: $('#xLand'), xTyp: $('#xTyp'), xPi: $('#xPi')
   };
   e.reifen.innerHTML = '<option value="">–</option>' + REIFEN.map(r => `<option>${r}</option>`).join('');
@@ -503,8 +602,43 @@
   }
   function waehleAuto(a) {
     gewaehlt = a; eigenesModus = false; e.eigenes.hidden = true;
-    e.suche.value = ''; e.treffer.hidden = true; zeigeAutoInfo();
+    e.suche.value = ''; e.treffer.hidden = true; zeigeAutoInfo(); zeigeVorhanden();
   }
+
+  /* Ist das gewählte Auto schon in der Garage? Beim Neuanlegen Hinweis zeigen und anbieten,
+     stattdessen einen vorhandenen Eintrag zu aktualisieren (die Werte im Formular bleiben dabei). */
+  const buildName = x => x.build || 'ohne Build-Namen';
+  function vorhandeneZu(autoId) { return daten.eintraege.filter(x => x.autoId === autoId); }
+  function zeigeVorhanden() {
+    const box = e.vorhanden;
+    const liste_ = (!bearbeitet && gewaehlt) ? vorhandeneZu(gewaehlt.id) : [];
+    if (!liste_.length) { box.hidden = true; box.innerHTML = ''; return; }
+    const pi = zahl(e.pi.value);
+    box.innerHTML = `<b>Schon in der Garage:</b> Speichern legt einen weiteren Build an – oder einen vorhandenen aktualisieren:`
+      + liste_.map(x => `<div class="vh-zeile${pi != null && x.pi === pi ? ' gleich' : ''}">
+          <span>${esc(buildName(x))} ${x.pi != null ? badge(x.pi) : ''}${pi != null && x.pi === pi ? ' <small>gleicher PI</small>' : ''}</span>
+          <button type="button" class="btn klein" data-uebernehmen="${esc(x.uid)}">Diesen aktualisieren</button></div>`).join('');
+    box.hidden = false;
+  }
+  e.vorhanden.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-uebernehmen]'); if (!b) return;
+    const x = daten.eintraege.find(y => y.uid === b.dataset.uebernehmen); if (!x) return;
+    bearbeitet = x.uid;
+    $('#dlgTitel').textContent = 'Fahrzeug bearbeiten';
+    $('#eLoeschen').hidden = false; $('#eKopie').hidden = false;
+    // Werte aus dem Formular (z. B. Screenshot) behalten, leere Felder aus dem vorhandenen Eintrag füllen
+    ZAHLFELDER.forEach(k => { if (e[k].value === '' && x[k] != null) e[k].value = x[k]; });
+    if (!e.build.value) e.build.value = x.build || '';
+    if (!e.design.value) e.design.value = x.design || '';
+    if (!e.reifen.value) e.reifen.value = x.reifen || '';
+    if (!e.antrieb.value) e.antrieb.value = x.antrieb || '';
+    if (!e.code.value) e.code.value = x.code || '';
+    if (!e.notiz.value) e.notiz.value = x.notiz || '';
+    if (!e.fav.checked) e.fav.checked = !!x.fav;
+    e.pi.dispatchEvent(new Event('input'));
+    zeigeVorhanden();
+    toast('Wird als Änderung von „' + buildName(x) + '“ gespeichert');
+  });
   function setzeEigenes(an) {
     eigenesModus = an; e.eigenes.hidden = !an;
     if (an) { gewaehlt = null; zeigeAutoInfo(); e.xName.focus(); }
@@ -544,7 +678,7 @@
   });
   e.suche.addEventListener('blur', () => setTimeout(() => { e.treffer.hidden = true; }, 150));
   e.eigenesBtn.addEventListener('click', () => setzeEigenes(!eigenesModus));
-  e.pi.addEventListener('input', () => { e.piBadge.innerHTML = zahl(e.pi.value) != null ? badge(zahl(e.pi.value)) : ''; });
+  e.pi.addEventListener('input', () => { e.piBadge.innerHTML = zahl(e.pi.value) != null ? badge(zahl(e.pi.value)) : ''; if (!e.vorhanden.hidden) zeigeVorhanden(); });
 
   const ZAHLFELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
 
@@ -555,7 +689,7 @@
     ocrReset();
     $('#dlgTitel').textContent = eintrag ? 'Fahrzeug bearbeiten' : 'Fahrzeug hinzufügen';
     $('#eLoeschen').hidden = !eintrag; $('#eKopie').hidden = !eintrag;
-    gewaehlt = null; setzeEigenes(false);
+    gewaehlt = null; setzeEigenes(false); zeigeVorhanden();
     if (eintrag) {
       const a = nachId.get(eintrag.autoId);
       if (a) waehleAuto(a);
@@ -641,6 +775,7 @@
 
   function ocrReset() { const v = $('#ocrVorschau'); if (v) v.hidden = true; ocr.status.textContent = ''; ocr.status.className = 'ocr-status'; ocr.roh.hidden = true; ocr.roh.open = false; }
   function ocrStatus(t, cls = '') { ocr.status.textContent = t; ocr.status.className = 'ocr-status ' + cls; }
+  let ocrMelder = t => ocrStatus(t);   // wohin Fortschrittsmeldungen gehen (Einzel-Dialog oder Stapel-Import)
 
   const skripte = {};
   function ladeSkript(url, pruefe) {
@@ -657,7 +792,7 @@
   async function holeWorker() {
     await ladeTesseract();
     if (!worker) worker = await Tesseract.createWorker(['deu', 'eng'], 1, {
-      logger: m => { if (m.status === 'recognizing text') ocrStatus('Lese Text … ' + Math.round(m.progress * 100) + ' %'); else if (m.status) ocrStatus('Vorbereitung: ' + m.status); }
+      logger: m => { if (m.status === 'recognizing text') ocrMelder('Lese Text … ' + Math.round(m.progress * 100) + ' %'); else if (m.status) ocrMelder('Vorbereitung: ' + m.status); }
     });
     return worker;
   }
@@ -835,7 +970,7 @@
     // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
     const seite = r.width / r.height;
     if (seite > 1.6 && seite < 1.9) {
-      ocrStatus('Lese Fahrzeugwerte …');
+      ocrMelder('Lese Fahrzeugwerte …');
       const cN = ausschnitt(r, 0.06, 0.23, 0.29, 0.31, 2), cW = ausschnitt(r, 0.62, 0.22, 0.94, 0.72, 2), cP = ausschnitt(r, 0.48, 0.64, 0.545, 0.69, 3);
       const name = await ocrLies(w, cN);
       const stats = await ocrLies(w, cW);
@@ -850,7 +985,7 @@
     }
     // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte ergänzen
     if (FELDER.some(k => werte[k] == null)) {
-      ocrStatus('Lese ganzes Bild …');
+      ocrMelder('Lese ganzes Bild …');
       const ganz = await ocrLies(w, aufbereiten(r));
       const w2 = werteAusText(ganz);
       for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
@@ -860,28 +995,42 @@
     return { werte, roh, autoText };
   }
 
-  async function verarbeiteBild(datei) {
-    if (!datei || !/^image\//.test(datei.type)) { ocrStatus('Das ist kein Bild.', 'fehl'); return; }
-    try {
-      ocrStatus('Lade Texterkennung …');
+  /* Liest einen Screenshot komplett: Bild prüfen, Werte und Fahrzeug erkennen.
+     Ergebnis: { fehler, werte, auto, roh, bmp }. Wird vom Einzel-Dialog und vom Stapel-Import benutzt. */
+  let ocrKette = Promise.resolve();   // Tesseract-Worker immer nur mit einem Bild gleichzeitig
+  function erkenneBild(datei, melder) {
+    const job = ocrKette.then(async () => {
+      ocrMelder = melder || (t => ocrStatus(t));
+      if (!datei || !/^image\//.test(datei.type)) return { fehler: 'Das ist kein Bild.' };
+      melder('Lade Texterkennung …');
       const w = await holeWorker();
       const bmp = await createImageBitmap(datei);
-      zeigeVorschau(bmp);
-      ocrStatus('Lese Bilddatei …');
+      melder('Lese Bilddatei …');
       const r = await rasterAusDatei(datei, bmp);
       const pruef = bildPruefen(r);
-      if (pruef.fehler) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = `Version ${OCR_VERSION}\n` + pruef.info; ocrStatus(pruef.fehler, 'fehl'); return; }
+      if (pruef.fehler) return { fehler: pruef.fehler, roh: `Version ${OCR_VERSION}\n` + pruef.info, bmp };
       const { werte, roh, autoText } = await leseBild(w, r, pruef);
-      const text = autoText;
-      ocr.roh.hidden = false; $('pre', ocr.roh).textContent = `Version ${OCR_VERSION}\n` + roh;
+      return { werte, auto: autoAusText(autoText), roh: `Version ${OCR_VERSION}\n` + roh, bmp };
+    });
+    ocrKette = job.catch(() => {});
+    return job;
+  }
+
+  async function verarbeiteBild(datei) {
+    try {
+      const erg = await erkenneBild(datei, t => ocrStatus(t));
+      if (erg.bmp) zeigeVorschau(erg.bmp);
+      if (erg.roh) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = erg.roh; }
+      if (erg.fehler) { ocrStatus(erg.fehler, 'fehl'); return; }
       const gefuellt = [];
       $$('.ocr-gefuellt', dlg).forEach(x => x.classList.remove('ocr-gefuellt'));
-      for (const [k, v] of Object.entries(werte)) {
+      for (const [k, v] of Object.entries(erg.werte)) {
         if (v == null || !e[k]) continue;
         e[k].value = v; e[k].classList.add('ocr-gefuellt'); gefuellt.push(k);
       }
       e.pi.dispatchEvent(new Event('input'));
-      if (!gewaehlt && !eigenesModus) { const a = autoAusText(text); if (a) { waehleAuto(a); gefuellt.push('Fahrzeug'); } }
+      if (!gewaehlt && !eigenesModus && erg.auto) { waehleAuto(erg.auto); gefuellt.push('Fahrzeug'); }
+      else zeigeVorhanden();
       const namen = { pi: 'PI', vmax: 'Höchstgeschw.', a100: '0–100', kw: 'Leistung', kg: 'Gewicht', nm: 'Drehmoment', antrieb: 'Antrieb' };
       if (gefuellt.length) ocrStatus('Erkannt: ' + gefuellt.map(k => namen[k] || k).join(', ') + ' – bitte grün markierte Felder prüfen.', 'ok');
       else ocrStatus('Keine Werte erkannt. Unter „Erkannter Text“ siehst du, was gelesen wurde.', 'fehl');
@@ -899,6 +1048,212 @@
     const item = [...(ev.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
     if (item) { ev.preventDefault(); verarbeiteBild(item.getAsFile()); }
   });
+
+  /* ---------- Stapel-Import: mehrere Screenshots → Entwürfe ----------
+     Entwürfe liegen nur im Arbeitsspeicher. Übernommen wird erst mit „Übernehmen“ (ein Speichervorgang). */
+  const dlgS = $('#dlgStapel');
+  let entwuerfe = [];   // { id, datei, url, status: 'wartet'|'liest'|'fertig'|'fehler', meldung, werte, autoId, aktion, roh }
+  let stapelLaeuft = false;
+  const WERTSPALTEN = [['pi', 'PI', 1], ['vmax', 'km/h', 0.1], ['a100', '0–100 s', 0.001], ['kw', 'kW', 1], ['kg', 'kg', 1], ['nm', 'Nm', 1]];
+
+  function fuelleAutoDatalist() {
+    if ($('#stapelAutos').childElementCount) return;
+    $('#stapelAutos').innerHTML = liste.map(a => `<option value="${esc(a.n)}"></option>`).join('');
+  }
+  // Vorschlag: gleiches Auto mit gleichem PI schon vorhanden → diesen Eintrag aktualisieren, sonst neuer Build
+  function vorschlagAktion(d) {
+    if (!d.autoId) return 'neu';
+    const vh = vorhandeneZu(d.autoId);
+    const gleich = vh.find(x => d.werte && d.werte.pi != null && x.pi === d.werte.pi);
+    return gleich ? gleich.uid : 'neu';
+  }
+  function entwurfHtml(d) {
+    const a = d.autoId ? nachId.get(d.autoId) : null;
+    const vh = d.autoId ? vorhandeneZu(d.autoId) : [];
+    const kopf = d.status === 'wartet' ? '<span class="leise">wartet …</span>'
+      : d.status === 'liest' ? `<span class="leise">${esc(d.meldung || 'wird gelesen …')}</span>`
+      : d.status === 'fehler' ? `<span class="fehl">${esc(d.meldung)}</span>` : '';
+    const fertig = d.status === 'fertig';
+    return `<div class="entwurf ${d.status}${fertig && !d.autoId ? ' unklar' : ''}" data-id="${d.id}">
+      <img src="${d.url}" alt="" loading="lazy">
+      <div class="ew-haupt">
+        <div class="ew-zeile">
+          <input class="ew-auto" list="stapelAutos" placeholder="Fahrzeug wählen …" value="${a ? esc(a.n) : ''}" ${fertig ? '' : 'disabled'}>
+          ${a ? `<span class="hinweis">Serie</span> ${badge(a.pi, a.k)}` : ''}
+          ${kopf}
+          <button type="button" class="btn klein ew-weg" title="Entwurf entfernen">✕</button>
+        </div>
+        ${fertig ? `<div class="ew-werte">${WERTSPALTEN.map(([k, l, st]) => `<label>${l}<input type="number" step="${st}" data-k="${k}" value="${d.werte[k] ?? ''}"></label>`).join('')}</div>
+        <div class="ew-zeile">
+          <select class="ew-aktion">
+            <option value="neu"${d.aktion === 'neu' ? ' selected' : ''}>${vh.length ? 'Als neuen Build anlegen' : 'Neu in die Garage'}</option>
+            ${vh.map(x => `<option value="${esc(x.uid)}"${d.aktion === x.uid ? ' selected' : ''}>Aktualisieren: ${esc(buildName(x))}${x.pi != null ? ' (PI ' + x.pi + ')' : ''}</option>`).join('')}
+            <option value="skip"${d.aktion === 'skip' ? ' selected' : ''}>Nicht übernehmen</option>
+          </select>
+          ${vh.length ? `<span class="hinweis">${vh.length === 1 ? 'Schon 1 Eintrag' : 'Schon ' + vh.length + ' Einträge'} in der Garage</span>` : ''}
+          ${!d.autoId ? '<span class="fehl">Fahrzeug nicht erkannt – bitte wählen</span>' : ''}
+        </div>` : ''}
+      </div>
+    </div>`;
+  }
+  function renderStapel() {
+    $('#stapelListe').innerHTML = entwuerfe.map(entwurfHtml).join('');
+    stapelZaehler();
+  }
+  function renderEntwurf(d) {
+    const alt = $(`#stapelListe .entwurf[data-id="${d.id}"]`);
+    if (alt) alt.outerHTML = entwurfHtml(d); else renderStapel();
+    stapelZaehler();
+  }
+  const entwurfBereit = d => d.status === 'fertig' && d.autoId && d.aktion !== 'skip';
+  function stapelZaehler() {
+    const n = entwuerfe.filter(entwurfBereit).length, offen = entwuerfe.filter(d => d.status === 'wartet' || d.status === 'liest').length;
+    $('#stapelZaehler').textContent = entwuerfe.length ? `${n} bereit${offen ? ` · ${offen} in Arbeit` : ''}` : '';
+    $('#stapelUebernehmen').disabled = !n;
+    $('#stapelUebernehmen').textContent = n ? `${n} übernehmen` : 'Übernehmen';
+  }
+
+  function stapelHinzu(dateien) {
+    const bilder = [...dateien].filter(f => /^image\//.test(f.type) && !/(^|\/)thumbnails\//i.test(f.webkitRelativePath || ''));
+    if (!bilder.length) { $('#stapelStatus').textContent = 'Keine Bilder gefunden.'; return; }
+    fuelleAutoDatalist();
+    for (const f of bilder) entwuerfe.push({ id: uid(), datei: f, url: URL.createObjectURL(f), status: 'wartet', werte: {}, aktion: 'neu' });
+    renderStapel();
+    stapelAbarbeiten();
+  }
+  async function stapelAbarbeiten() {
+    if (stapelLaeuft) return;
+    stapelLaeuft = true;
+    try {
+      let d;
+      while ((d = entwuerfe.find(x => x.status === 'wartet'))) {
+        const nr = entwuerfe.filter(x => x.status !== 'wartet').length + 1;
+        $('#stapelStatus').textContent = `Lese Screenshot ${nr} von ${entwuerfe.length} …`;
+        d.status = 'liest'; renderEntwurf(d);
+        try {
+          const erg = await erkenneBild(d.datei, t => { d.meldung = t; const el = $(`#stapelListe .entwurf[data-id="${d.id}"] .leise`); if (el) el.textContent = t; });
+          if (!entwuerfe.includes(d)) continue;   // inzwischen entfernt
+          if (erg.fehler) { d.status = 'fehler'; d.meldung = erg.fehler; }
+          else { d.status = 'fertig'; d.werte = erg.werte || {}; d.autoId = erg.auto ? erg.auto.id : null; d.roh = erg.roh; d.aktion = vorschlagAktion(d); }
+        } catch (err) { d.status = 'fehler'; d.meldung = 'Texterkennung fehlgeschlagen: ' + err.message; }
+        renderEntwurf(d);
+      }
+      $('#stapelStatus').textContent = entwuerfe.length ? 'Fertig gelesen – bitte prüfen und übernehmen.' : '';
+    } finally { stapelLaeuft = false; stapelZaehler(); }
+  }
+
+  $('#btnStapel').addEventListener('click', () => { dlgS.showModal(); renderStapel(); });
+  $('#stapelWaehlen').addEventListener('click', () => $('#stapelDateien').click());
+  $('#stapelOrdnerWaehlen').addEventListener('click', () => $('#stapelOrdner').click());
+  ['#stapelDateien', '#stapelOrdner'].forEach(s => $(s).addEventListener('change', ev => { stapelHinzu(ev.target.files); ev.target.value = ''; }));
+  const zoneS = $('#stapelZone');
+  zoneS.addEventListener('dragover', ev => { ev.preventDefault(); zoneS.classList.add('drueber'); });
+  zoneS.addEventListener('dragleave', () => zoneS.classList.remove('drueber'));
+  zoneS.addEventListener('drop', ev => { ev.preventDefault(); zoneS.classList.remove('drueber'); stapelHinzu(ev.dataTransfer.files); });
+  dlgS.addEventListener('paste', ev => {
+    if (ev.target.closest('input')) return;
+    const bilder = [...(ev.clipboardData?.items || [])].filter(i => i.type.startsWith('image/')).map(i => i.getAsFile());
+    if (bilder.length) { ev.preventDefault(); stapelHinzu(bilder); }
+  });
+  $('#stapelListe').addEventListener('click', ev => {
+    const w = ev.target.closest('.ew-weg'); if (!w) return;
+    const id = w.closest('.entwurf').dataset.id, d = entwuerfe.find(x => x.id === id);
+    if (d) URL.revokeObjectURL(d.url);
+    entwuerfe = entwuerfe.filter(x => x.id !== id); renderStapel();
+  });
+  $('#stapelListe').addEventListener('change', ev => {
+    const box = ev.target.closest('.entwurf'); if (!box) return;
+    const d = entwuerfe.find(x => x.id === box.dataset.id); if (!d) return;
+    if (ev.target.classList.contains('ew-auto')) {
+      const a = liste.find(x => x.n === ev.target.value.trim());
+      d.autoId = a ? a.id : null; d.aktion = vorschlagAktion(d); renderEntwurf(d);
+    } else if (ev.target.dataset.k) {
+      d.werte[ev.target.dataset.k] = zahl(ev.target.value);
+    } else if (ev.target.classList.contains('ew-aktion')) {
+      d.aktion = ev.target.value; stapelZaehler();
+    }
+  });
+  $('#stapelLeeren').addEventListener('click', () => {
+    if (entwuerfe.some(entwurfBereit) && !confirm('Alle Entwürfe verwerfen?')) return;
+    entwuerfe.forEach(d => URL.revokeObjectURL(d.url)); entwuerfe = []; renderStapel(); $('#stapelStatus').textContent = '';
+  });
+  $('#stapelUebernehmen').addEventListener('click', async () => {
+    const jetzt = new Date().toISOString(), fertig = entwuerfe.filter(entwurfBereit);
+    let neu = 0, akt = 0;
+    for (const d of fertig) {
+      const werte = {};
+      for (const [k] of WERTSPALTEN) if (d.werte[k] != null) werte[k] = d.werte[k];
+      if (werte.pi != null && (werte.pi < 100 || werte.pi > 999)) delete werte.pi;
+      if (d.werte.antrieb) werte.antrieb = d.werte.antrieb;
+      if (d.aktion === 'neu') {
+        const a = nachId.get(d.autoId); const { m, n, j, l, t, pi, k } = a;
+        daten.eintraege.push(kompakt(Object.assign({ uid: uid(), erstellt: jetzt, geaendert: jetzt, autoId: a.id, auto: { m, n, j, l, t, pi, k } }, werte)));
+        neu++;
+      } else {
+        const i = daten.eintraege.findIndex(x => x.uid === d.aktion);
+        if (i >= 0) { daten.eintraege[i] = kompakt(Object.assign({}, daten.eintraege[i], werte, { geaendert: jetzt })); akt++; }
+      }
+    }
+    if (!(neu + akt)) return;
+    if (await speichern()) {
+      fertig.forEach(d => URL.revokeObjectURL(d.url));
+      entwuerfe = entwuerfe.filter(d => !fertig.includes(d));
+      renderStapel(); fuelleFilter(); render();
+      toast(`${neu} neu angelegt, ${akt} aktualisiert`);
+      if (!entwuerfe.length) dlgS.close();
+    }
+  });
+
+  /* ---------- Builds vergleichen ---------- */
+  const vergleich = new Set();   // uids, nur im Arbeitsspeicher
+  const VGL_MAX = 4;
+  function waehleVergleich(id, an, cb) {
+    if (an && vergleich.size >= VGL_MAX) { if (cb) cb.checked = false; toast(`Höchstens ${VGL_MAX} Autos gleichzeitig`); return; }
+    if (an) vergleich.add(id); else vergleich.delete(id);
+    vergleichLeiste();
+  }
+  function vergleichLeiste() {
+    for (const id of [...vergleich]) if (!daten.eintraege.some(x => x.uid === id)) vergleich.delete(id);
+    $('#vglLeiste').hidden = vergleich.size === 0 || ui.tab !== 'garage';
+    $('#vglText').textContent = `${vergleich.size} ausgewählt`;
+    $('#vglStart').disabled = vergleich.size < 2;
+  }
+  function zeigeVergleich() {
+    const xs = [...vergleich].map(id => daten.eintraege.find(x => x.uid === id)).filter(Boolean);
+    const zeilen = [
+      ['Fahrzeug', x => `<b>${nameHtml(autoVon(x))}</b>`],
+      ['Build', x => esc(x.build || '–')],
+      ['Design', x => esc(x.design || '–')],
+      ['Typ', x => esc(autoVon(x).t || '–')],
+      ['Serie', x => badge(autoVon(x).pi, autoVon(x).k) || '–'],
+      ['Upgrade', x => x.pi != null ? badge(x.pi) : '–'],
+      ['Höchstgeschw.', x => x.vmax != null ? fmt(x.vmax, 1) + ' km/h' : '–', 'vmax', 1],
+      ['0–100 km/h', x => x.a100 != null ? fmt(x.a100, 3) + ' s' : '–', 'a100', -1],
+      ['Leistung', x => x.kw != null ? fmt(x.kw, 0) + ' kW' : '–', 'kw', 1],
+      ['Drehmoment', x => x.nm != null ? fmt(x.nm, 0) + ' Nm' : '–', 'nm', 1],
+      ['Gewicht', x => x.kg != null ? fmt(x.kg, 0) + ' kg' : '–', 'kg', -1],
+      ['kW pro Tonne', x => (x.kw && x.kg) ? fmt(x.kw / x.kg * 1000, 0) : '–', 'kwt', 1],
+      ['Reifen', x => esc(x.reifen || '–')],
+      ['Antrieb', x => esc(x.antrieb || '–')],
+      ['Tune-Code', x => esc(x.code || '–')]
+    ];
+    const wert = (x, k) => k === 'kwt' ? ((x.kw && x.kg) ? x.kw / x.kg : null) : x[k];
+    $('#vglTabelle').innerHTML = `<tbody>${zeilen.map(([l, f, k, rich]) => {
+      let best = null;
+      if (k) { const ws = xs.map(x => wert(x, k)).filter(v => v != null); if (ws.length > 1) best = rich > 0 ? Math.max(...ws) : Math.min(...ws); }
+      return `<tr><th>${l}</th>${xs.map(x => `<td class="${best != null && wert(x, k) === best ? 'bester' : ''}">${f(x)}</td>`).join('')}</tr>`;
+    }).join('')}</tbody>`;
+    $('#dlgVergleich').showModal();
+  }
+  $('#vglStart').addEventListener('click', zeigeVergleich);
+  $('#vglAus').addEventListener('click', () => { vergleich.clear(); vergleichLeiste(); $$('.vgl-wahl').forEach(c => { c.checked = false; }); });
+  $('#abdKpis').addEventListener('click', ev => {
+    const k = ev.target.closest('[data-kpi="promo"]'); if (!k) return;
+    [f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz].forEach(x => { x.value = ''; });
+    f.suche.value = ''; f.fav.checked = false; f.promo.value = 'nein';
+    ui.tab = 'garage'; uiSpeichern(); fuelleSort(); render(); window.scrollTo(0, 0);
+  });
+  $('#abdKpis').addEventListener('keydown', ev => { if (ev.key === 'Enter') ev.target.click(); });
 
   /* ---------- Einstellungen: Export / Import / Liste ---------- */
   const dlgE = $('#dlgEinst');
@@ -1005,6 +1360,9 @@
   [f.suche, f.klasse, f.land, f.typ, f.reifen, f.antrieb, f.besitz, f.promo, f.fav].forEach(x => x.addEventListener('input', render));
   f.sort.addEventListener('change', () => { if (ui.tab === 'garage') ui.sortG = f.sort.value; else ui.sortK = f.sort.value; uiSpeichern(); render(); });
   $('#tabGarage tbody').addEventListener('click', ev => {
+    const cb = ev.target.closest('.vgl-wahl');
+    if (cb) { waehleVergleich(cb.dataset.uid, cb.checked, cb); return; }
+    if (ev.target.closest('td.vgl')) return;
     const tr = ev.target.closest('tr[data-uid]'); if (!tr) return;
     oeffneDialog(daten.eintraege.find(x => x.uid === tr.dataset.uid));
   });

@@ -276,3 +276,91 @@ table.matrix { border-collapse: separate; border-spacing: 0; width: 100%; font-s
   .karte-aktionen input[type=search] { width: 100%; }
   .matrix th, .matrix td { padding: 5px 6px; }
 }
+
+/* Hinweis: Auto schon in der Garage */
+.vorhanden { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: rgba(255,122,46,.1); border: 1px solid rgba(255,122,46,.45); font-size: 14px; }
+.vh-zeile { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; }
+.vh-zeile.gleich { font-weight: 600; }
+.vh-zeile small { color: var(--akzent2); }
+
+/* Stapel-Import */
+.dlg.breit { width: min(1000px, calc(100vw - 24px)); }
+.dlg.breit > .dlg-inhalt { max-height: calc(100vh - 170px); }
+.stapel-liste { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.entwurf { display: grid; grid-template-columns: 160px 1fr; gap: 12px; padding: 10px; border: 1px solid var(--linie); border-radius: 10px; background: var(--flaeche2); align-items: start; }
+.entwurf img { width: 160px; border-radius: 6px; display: block; }
+.entwurf.unklar { border-color: var(--akzent2); }
+.entwurf.fehler { border-color: var(--gefahr); }
+.ew-haupt { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.ew-zeile { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ew-auto { flex: 1 1 260px; }
+.ew-weg { margin-left: auto; }
+.ew-werte { display: grid; grid-template-columns: repeat(6, minmax(70px, 1fr)); gap: 6px; }
+.ew-werte label { display: flex; flex-direction: column; font-size: 12px; color: var(--leise); gap: 2px; }
+.ew-werte input { padding: 5px 6px; width: 100%; }
+.fehl { color: var(--gefahr); font-size: 13px; }
+@media (max-width: 760px) {
+  .entwurf { grid-template-columns: 1fr; }
+  .entwurf img { width: 100%; max-width: 320px; }
+  .ew-werte { grid-template-columns: repeat(3, 1fr); }
+  #btnStapel { padding: 8px 10px; }
+}
+
+/* Rennen: Event-Finder + Bestenliste */
+body[data-tab=rennen] .filter { display: none; }
+.ev-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.ev-form label, .ev-inline { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--leise); }
+.ev-inline { flex-direction: row; align-items: center; gap: 6px; }
+.ev-block { margin-top: 14px; }
+.ev-block h4 { margin: 0 0 6px; font-family: "Barlow Condensed", sans-serif; font-size: 17px; text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; }
+.ev-zeile { display: grid; grid-template-columns: minmax(200px, 2fr) auto minmax(160px, 1.5fr) auto; gap: 12px; align-items: center; padding: 7px 10px; border-radius: 8px; cursor: pointer; }
+.ev-zeile:nth-child(odd) { background: rgba(255,255,255,.03); }
+.ev-zeile:hover { background: var(--flaeche2); }
+.ev-name small { display: block; color: var(--leise); font-size: 12px; }
+.ev-name .jahr { font-size: .85em; }
+.ev-werte { font-variant-numeric: tabular-nums; font-size: 14px; }
+.ev-tags { text-align: right; white-space: nowrap; }
+.warnung { color: var(--akzent2); }
+table.bestenliste { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+.bestenliste th, .bestenliste td { padding: 6px 8px; border-bottom: 1px solid var(--linie); vertical-align: top; text-align: left; }
+.bestenliste thead th { position: sticky; top: 0; background: var(--flaeche2); color: var(--leise); z-index: 1; }
+.bestenliste tbody th { width: 60px; }
+.bl-eintrag { display: grid; grid-template-columns: 16px 1fr auto; gap: 6px; align-items: baseline; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.bl-eintrag:hover { background: var(--flaeche2); }
+.bl-platz { color: var(--leise); font-variant-numeric: tabular-nums; }
+.bl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-wert { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; white-space: nowrap; }
+.bestenliste td { min-width: 200px; }
+@media (max-width: 760px) {
+  .ev-form { grid-template-columns: repeat(2, 1fr); }
+  .ev-zeile { grid-template-columns: 1fr auto; gap: 4px 10px; }
+  .ev-werte { grid-column: 1 / -1; }
+  .ev-tags { grid-column: 1 / -1; text-align: left; }
+  .nur-breit { display: none; }
+}
+
+/* Vergleich */
+.liste td.vgl, .liste th.vgl-kopf { width: 28px; padding-right: 0; text-align: center; color: var(--leise); }
+.vgl-wahl { width: 16px; height: 16px; accent-color: var(--akzent); cursor: pointer; }
+.vgl-leiste {
+  position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 40;
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-radius: 999px;
+  background: var(--flaeche2); border: 1px solid var(--akzent); box-shadow: 0 10px 30px rgba(0,0,0,.5); font-size: 14px;
+}
+.vgl-leiste .btn[disabled] { opacity: .5; cursor: default; }
+table.vergleich { border-collapse: collapse; width: 100%; font-size: 14px; }
+.vergleich th, .vergleich td { padding: 7px 10px; border-bottom: 1px solid var(--linie); text-align: left; vertical-align: top; }
+.vergleich th { color: var(--leise); font-weight: 500; white-space: nowrap; position: sticky; left: 0; background: var(--flaeche); }
+.vergleich td { min-width: 170px; font-variant-numeric: tabular-nums; }
+.vergleich td.bester { color: var(--ok); font-weight: 700; }
+.kpi.link { cursor: pointer; }
+.kpi.link:hover { border-color: var(--akzent); }
+.kpi.link .kpi-name { color: var(--akzent); }
+@media (max-width: 760px) {
+  .liste td.vgl { grid-column: 2; grid-row: 2; justify-self: end; width: auto; }
+  .liste th.vgl-kopf { display: none; }
+  .vgl-leiste { left: 50%; right: auto; transform: translateX(-50%); bottom: calc(56px + env(safe-area-inset-bottom, 0px)); }
+}
+.vgl-leiste[hidden] { display: none; }
+.ev-form select, .ev-form input { width: 100%; min-width: 0; }
+.vgl-leiste span { white-space: nowrap; }
