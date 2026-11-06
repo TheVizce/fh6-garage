@@ -21,10 +21,10 @@
   const BEZUG = { Autoshow: 'Autohändler', Wheelspin: 'Wheelspin', Seasonal: 'Saison', 'Collection Journal': 'Sammeljournal', 'Autoshow DLC': 'Autohändler (DLC)', Treasure: 'Schatz', Loyalty: 'Treuebonus', Aftermarket: 'Aftermarket', 'Barn Find': 'Scheunenfund' };
 
   const SORT_GARAGE = [
-    ['neu', 'Zuletzt bearbeitet'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
+    ['neu', 'Zuletzt bearbeitet'], ['spiel', 'Wie im Spiel (Marke, neueste zuerst)'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
     ['vmax', 'Höchstgeschw.'], ['a100', '0–100 (schnellste)'], ['kw', 'Leistung'], ['kg', 'Gewicht (leicht)']
   ];
-  const SORT_KATALOG = [['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI Serie'], ['besitz', 'In Garage zuerst']];
+  const SORT_KATALOG = [['spiel', 'Wie im Spiel (Marke, neueste zuerst)'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI Serie'], ['besitz', 'In Garage zuerst']];
 
   /* ---------- Hilfen ---------- */
   const $ = (s, el = document) => el.querySelector(s);
@@ -40,6 +40,8 @@
   const modell = a => String((a && a.n) || '').replace(/^\d{4}\s+/, '');
   const jahrVon = a => (a && a.j) || Number(String((a && a.n) || '').slice(0, 4)) || 0;
   const nachModell = (x, y) => modell(x).localeCompare(modell(y), 'de') || jahrVon(x) - jahrVon(y);
+  // Wie in der Garage im Spiel: Marke A–Z, innerhalb der Marke Baujahr neu → alt, dann Modell
+  const nachSpiel = (x, y) => String(x.m || '').localeCompare(String(y.m || ''), 'de') || jahrVon(y) - jahrVon(x) || modell(x).localeCompare(modell(y), 'de');
   const nachJahr = (x, y) => jahrVon(x) - jahrVon(y) || modell(x).localeCompare(modell(y), 'de');
   const nameHtml = a => `${esc(modell(a) || '?')}${jahrVon(a) ? ` <span class="jahr">${jahrVon(a)}</span>` : ''}`;
 
@@ -323,6 +325,7 @@
     const cmp = {
       neu: (x, y) => (y.geaendert || '').localeCompare(x.geaendert || ''),
       name: (x, y) => nachModell(autoVon(x), autoVon(y)) || (x.build || '').localeCompare(y.build || '', 'de'),
+      spiel: (x, y) => nachSpiel(autoVon(x), autoVon(y)) || (x.build || '').localeCompare(y.build || '', 'de'),
       jahr: (x, y) => nachJahr(autoVon(x), autoVon(y)) || (x.build || '').localeCompare(y.build || '', 'de'),
       pi: (x, y) => nv(y.pi ?? autoVon(y).pi) - nv(x.pi ?? autoVon(x).pi),
       vmax: (x, y) => nv(y.vmax) - nv(x.vmax),
@@ -366,6 +369,7 @@
     });
     const cmp = {
       name: nachModell,
+      spiel: nachSpiel,
       jahr: nachJahr,
       pi: (x, y) => (y.pi || 0) - (x.pi || 0),
       besitz: (x, y) => (anz.get(y.id) || 0) - (anz.get(x.id) || 0) || nachModell(x, y)
