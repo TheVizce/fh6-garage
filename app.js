@@ -15,7 +15,7 @@
   const DB_NAME = 'fh6-garage', DB_STORE = 'kv';
 
   const KLASSEN = ['D', 'C', 'B', 'A', 'S1', 'S2', 'R', 'X'];
-  const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage'];
+  const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage', 'Vintage-Rennreifen'];
   const ANTRIEB = ['FWD', 'RWD', 'AWD'];
   const LAENDER = { USA: 'USA', Japan: 'Japan', Germany: 'Deutschland', Italy: 'Italien', UK: 'Großbritannien', France: 'Frankreich', Sweden: 'Schweden', Korea: 'Südkorea', 'South Korea': 'Südkorea', Australia: 'Australien', China: 'China', Canada: 'Kanada', Austria: 'Österreich', Croatia: 'Kroatien', Denmark: 'Dänemark', Netherlands: 'Niederlande', Spain: 'Spanien', 'Czech Republic': 'Tschechien', Mexico: 'Mexiko', Switzerland: 'Schweiz', 'New Zealand': 'Neuseeland', Belgium: 'Belgien', India: 'Indien' };
   const BEZUG = { Autoshow: 'Autohändler', Wheelspin: 'Wheelspin', Seasonal: 'Saison', 'Collection Journal': 'Sammeljournal', 'Autoshow DLC': 'Autohändler (DLC)', Treasure: 'Schatz', Loyalty: 'Treuebonus', Aftermarket: 'Aftermarket', 'Barn Find': 'Scheunenfund' };
