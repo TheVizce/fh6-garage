@@ -956,13 +956,25 @@
   }
 
   // Versucht das Fahrzeug anhand des Textes zu erkennen
+  // Für den Namensabgleich: Zeichen, die die Erkennung verwechselt, gleichsetzen (i8 ↔ 18, l ↔ 1, o ↔ 0)
+  const ocrGleich = x => x.replace(/[il]/g, '1').replace(/o/g, '0');
   function autoAusText(text) {
-    const t = ' ' + norm(text).replace(/[^a-z0-9]+/g, ' ') + ' ';
+    const t = ' ' + ocrGleich(norm(text).replace(/[^a-z0-9]+/g, ' ')) + ' ';
     let best = null, bestScore = 0;
     for (const a of liste) {
-      const woerter = norm(a.n).replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(x => x.length > 1 || /\d/.test(x));
+      const alle = ocrGleich(norm(a.n).replace(/[^a-z0-9]+/g, ' ')).trim().split(' ');
+      const zaehlt = x => x.length > 1 || /\d/.test(x);
+      const woerter = alle.filter(zaehlt);
       if (!woerter.length) continue;
-      const hits = woerter.filter(x => t.includes(' ' + x + ' ')).length;
+      // Treffer: Wort einzeln gefunden, oder als Teil zusammengeschriebener Nachbarwörter („X5M“ = „X5 M“)
+      const getroffen = new Array(alle.length).fill(false);
+      for (let i = 0; i < alle.length; i++) {
+        if (t.includes(' ' + alle[i] + ' ')) { getroffen[i] = true; continue; }
+        for (let j = alle.length - 1; j > i; j--) {
+          if (t.includes(' ' + alle.slice(i, j + 1).join('') + ' ')) { for (let k = i; k <= j; k++) getroffen[k] = true; break; }
+        }
+      }
+      const hits = alle.filter((x, i) => zaehlt(x) && getroffen[i]).length;
       const score = hits / woerter.length + hits * 0.01;
       if (score > bestScore) { bestScore = score; best = a; }
     }
@@ -984,10 +996,16 @@
       const pz = c => Math.round(c.tinte * 1000) / 10 + ' %';
       werte = werteAusText(stats);
       delete werte.pi;
+      // Spalte „Neu“ allein lesen: Unterscheiden sich Vorher/Neu, trennt die Erkennung die Spalten sonst in
+      // eigene Blöcke und die Zeile enthält nur den alten Wert. Zuordnung über die Einheit, nicht die Reihenfolge.
+      const cNeu = ausschnitt(r, 0.856, 0.22, 0.94, 0.72, 2);
+      const neuText = await ocrLies(w, cNeu, '6');
+      const wNeu = werteAusText(neuText);
+      for (const k of ['vmax', 'a100', 'kw', 'kg', 'nm']) if (wNeu[k] != null) werte[k] = wNeu[k];
       const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
       if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
       autoText = name;
-      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Neu]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
     // 1b. Name nicht erkannt (z. B. graue Schrift auf hellem/farbigem Hintergrund): Namensbereich nochmal
     //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
