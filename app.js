@@ -996,16 +996,16 @@
       const pz = c => Math.round(c.tinte * 1000) / 10 + ' %';
       werte = werteAusText(stats);
       delete werte.pi;
-      // Spalte „Neu“ allein lesen: Unterscheiden sich Vorher/Neu, trennt die Erkennung die Spalten sonst in
-      // eigene Blöcke und die Zeile enthält nur den alten Wert. Zuordnung über die Einheit, nicht die Reihenfolge.
-      const cNeu = ausschnitt(r, 0.856, 0.22, 0.94, 0.72, 2);
+      // Spalte „Vorheriger“ allein lesen und bevorzugen (Wunsch: einheitlich der Wert des aktuell angewendeten
+      // Tunings, nicht die Vorschau in „Neu“). Zuordnung über die Einheit, nicht die Reihenfolge.
+      const cNeu = ausschnitt(r, 0.745, 0.22, 0.835, 0.72, 2);
       const neuText = await ocrLies(w, cNeu, '6');
       const wNeu = werteAusText(neuText);
       for (const k of ['vmax', 'a100', 'kw', 'kg', 'nm']) if (wNeu[k] != null) werte[k] = wNeu[k];
       const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
       if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
       autoText = name;
-      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Neu]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Vorheriger]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
     // 1b. Name nicht erkannt (z. B. graue Schrift auf hellem/farbigem Hintergrund): Namensbereich nochmal
     //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
