@@ -927,9 +927,9 @@
         const n = letzteZahl(z, /\d{2,3}(?:[.,]\d)?/g); if (n != null && n >= 50 && n < 600) w.vmax = n;
       }
       // Leistung in kW (wie im Spiel); PS/HP werden umgerechnet. "KW/kg" (Leistungsgewicht) zählt nicht.
-      if (w.kw == null) { const m = [...z.matchAll(/(\d{2,4})\s*(kW|PS|HP|BHP)\b(?!\s*\/)/gi)].pop(); if (m) w.kw = /kw/i.test(m[2]) ? Number(m[1]) : Math.round(Number(m[1]) / 1.35962); }
+      if (w.kw == null) { const m = [...z.matchAll(/(\d{1,2}[.,]\d{3}|\d{2,4})\s*(kW|PS|HP|BHP)\b(?!\s*\/)/gi)].pop(); if (m) { const n = Number(m[1].replace(/[.,]/g, '')); w.kw = /kw/i.test(m[2]) ? n : Math.round(n / 1.35962); } }
       if (w.kg == null) { const m = [...z.matchAll(/(\d{1,2}[.,]?\d{3}|\d{3,4})\s*kg\b/gi)].pop(); if (m) { const n = zahlAus(m[1]); if (n >= 300 && n < 6000) w.kg = n; } }
-      if (w.nm == null) { const m = [...z.matchAll(/(\d{2,4})\s*N\s*[·.:'’`´\-]?\s*m\b/gi)].pop(); if (m) w.nm = Number(m[1]); }
+      if (w.nm == null) { const m = [...z.matchAll(/(\d{1,2}[.,]\d{3}|\d{2,4})\s*N\s*[·.:'’`´\-]?\s*m\b/gi)].pop(); if (m) w.nm = Number(m[1].replace(/[.,]/g, '')); }
       if (w.antrieb == null) { const m = z.match(/\b(AWD|RWD|FWD)\b/); if (m) w.antrieb = m[1]; else if (/allrad/.test(lz)) w.antrieb = 'AWD'; else if (/heckantrieb/.test(lz)) w.antrieb = 'RWD'; else if (/frontantrieb/.test(lz)) w.antrieb = 'FWD'; }
       // PI: Zahlen mit Einheit (km/h, kg, kW, N·m, Sek. …) und Datumsangaben vorher entfernen,
       // dann zuerst "Klasse + Zahl" (z. B. "C 500"), sonst eine allein stehende dreistellige Zahl (Abzeichen).
@@ -1000,16 +1000,17 @@
       const pz = c => Math.round(c.tinte * 1000) / 10 + ' %';
       werte = werteAusText(stats);
       delete werte.pi;
-      // Spalte „Vorheriger“ allein lesen und bevorzugen (Wunsch: einheitlich der Wert des aktuell angewendeten
-      // Tunings, nicht die Vorschau in „Neu“). Zuordnung über die Einheit, nicht die Reihenfolge.
-      const cNeu = ausschnitt(r, 0.745, 0.22, 0.835, 0.72, 2);
+      // Spalte „Neu“ allein lesen und bevorzugen: „Neu“ ist der Stand mit angewendetem Tuning (im Spiel
+      // nachgeprüft, Corvette ZR-1: Vorheriger 210 km/h, Neu 317 km/h, gefahren > 300 km/h).
+      // Zuordnung über die Einheit, nicht die Reihenfolge.
+      const cNeu = ausschnitt(r, 0.856, 0.22, 0.94, 0.72, 2);
       const neuText = await ocrLies(w, cNeu, '6');
       const wNeu = werteAusText(neuText);
       for (const k of ['vmax', 'a100', 'kw', 'kg', 'nm']) if (wNeu[k] != null) werte[k] = wNeu[k];
       const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
       if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
       autoText = name;
-      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Vorheriger]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Neu]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
     // 1b. Name nicht erkannt (z. B. graue Schrift auf hellem/farbigem Hintergrund): Namensbereich nochmal
     //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
