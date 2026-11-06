@@ -840,14 +840,14 @@
 
   /* Ausschnitt (Angaben relativ, 0–1) vergrößern und nur helle, ungesättigte Pixel (weiße/graue Schrift)
      als schwarze Schrift auf Weiß behalten. Farbige Flächen und dunkler Hintergrund fallen weg. */
-  function ausschnitt(r, x0, y0, x1, y1, faktor) {
+  function ausschnitt(r, x0, y0, x1, y1, faktor, schwelle = 130) {
     const W = r.width, H = r.height, f = faktor * Math.max(1, 2600 / W);
     const sx = x0 * W, sy = y0 * H, w = Math.round((x1 - x0) * W * f), h = Math.round((y1 - y0) * H * f);
     const g = new Uint8Array(w * h); let tinte = 0;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const qx = sx + (x + 0.5) / f - 0.5, qy = sy + (y + 0.5) / f - 0.5;
       const R = abtasten(r, qx, qy, 0), G = abtasten(r, qx, qy, 1), B = abtasten(r, qx, qy, 2);
-      const mn = Math.min(R, G, B), mx = Math.max(R, G, B), schrift = mn > 130 && mx - mn < 70;
+      const mn = Math.min(R, G, B), mx = Math.max(R, G, B), schrift = mn > schwelle && mx - mn < 70;
       g[y * w + x] = schrift ? 0 : 255; if (schrift) tinte++;
     }
     return { w, h, g, tinte: tinte / (w * h) };
@@ -993,10 +993,13 @@
     //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
     if (seite > 1.6 && seite < 1.9 && !autoAusText(autoText)) {
       ocrMelder('Lese Fahrzeugnamen erneut …');
-      for (const [psm, f] of [['6', 3], ['11', 3]]) {
-        const t = await ocrLies(w, ausschnitt(r, 0.06, 0.23, 0.29, 0.31, f), psm);
-        roh += `\n\n[Name, Versuch psm ${psm}]\n${t.trim()}`;
-        if (autoAusText(t)) { autoText = t; break; }
+      // Versuche sammeln: Modell (weiß) und Baujahr/Marke (grau) kommen manchmal aus verschiedenen Versuchen.
+      // Schwelle 90 fängt die graue Zeile auf sehr dunklem Hintergrund.
+      for (const [psm, f, sw] of [['6', 3, 130], ['11', 3, 130], ['6', 3, 90], ['11', 3, 90]]) {
+        const t = await ocrLies(w, ausschnitt(r, 0.06, 0.23, 0.29, 0.31, f, sw), psm);
+        roh += `\n\n[Name, Versuch psm ${psm}, Schwelle ${sw}]\n${t.trim()}`;
+        autoText += '\n' + t;
+        if (autoAusText(autoText)) break;
       }
     }
     // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte (oder den Namen) ergänzen
