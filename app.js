@@ -17,8 +17,6 @@
   const KLASSEN = ['D', 'C', 'B', 'A', 'S1', 'S2', 'R', 'X'];
   const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage', 'Vintage-Rennreifen'];
   const ANTRIEB = ['FWD', 'RWD', 'AWD'];
-  const LAENDER = { USA: 'USA', Japan: 'Japan', Germany: 'Deutschland', Italy: 'Italien', UK: 'Großbritannien', France: 'Frankreich', Sweden: 'Schweden', Korea: 'Südkorea', 'South Korea': 'Südkorea', Australia: 'Australien', China: 'China', Canada: 'Kanada', Austria: 'Österreich', Croatia: 'Kroatien', Denmark: 'Dänemark', Netherlands: 'Niederlande', Spain: 'Spanien', 'Czech Republic': 'Tschechien', Mexico: 'Mexiko', Switzerland: 'Schweiz', 'New Zealand': 'Neuseeland', Belgium: 'Belgien', India: 'Indien' };
-  const BEZUG = { Autoshow: 'Autohändler', Wheelspin: 'Wheelspin', Seasonal: 'Saison', 'Collection Journal': 'Sammeljournal', 'Autoshow DLC': 'Autohändler (DLC)', Treasure: 'Schatz', Loyalty: 'Treuebonus', Aftermarket: 'Aftermarket', 'Barn Find': 'Scheunenfund' };
 
   const SORT_GARAGE = [
     ['neu', 'Zuletzt bearbeitet'], ['spiel', 'Wie im Spiel (Marke, neueste zuerst)'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
@@ -158,12 +156,28 @@
     bereit = true;
   }
 
+  /* Mehrere Tabs/Fenster: Jeder Tab hält die Garage im Speicher und schreibt sie komplett zurück.
+     Nach jedem Speichern bekommen die anderen Tabs Bescheid und laden die Daten neu, damit kein Tab
+     mit einem veralteten Stand die Änderungen eines anderen überschreibt. */
+  const kanal = ('BroadcastChannel' in window) ? new BroadcastChannel('fh6-garage') : null;
+  function meldeTabs() { try { if (kanal) kanal.postMessage({ typ: 'gespeichert' }); } catch (_) { /* egal */ } }
+  if (kanal) kanal.onmessage = async ev => {
+    if (!ev.data || ev.data.typ !== 'gespeichert' || !bereit) return;
+    try {
+      await schreibKette;   // eigene, noch laufende Schreibvorgänge zuerst abschließen
+      const d = speicherArt === 'idb' ? await idb('get', 'daten') : lies(K_DATEN);
+      if (!d) return;
+      daten = normDaten(d);
+      fuelleFilter(); render();
+    } catch (e) { zeigeFehler('Änderungen aus einem anderen Tab konnten nicht geladen werden: ' + e.message); }
+  };
+
   let schreibKette = Promise.resolve();
   function schreibDaten() {
     const stand = JSON.parse(JSON.stringify(daten));
     const job = schreibKette.then(async () => {
-      if (speicherArt === 'ls') return schreib(K_DATEN, stand);
-      try { await idb('put', 'daten', stand); return true; }
+      if (speicherArt === 'ls') { const ok = schreib(K_DATEN, stand); if (ok) meldeTabs(); return ok; }
+      try { await idb('put', 'daten', stand); meldeTabs(); return true; }
       catch (e) {
         const voll = e && e.name === 'QuotaExceededError';
         zeigeFehler(voll ? 'Speichern fehlgeschlagen: Der Speicher dieses Browsers ist voll. Bitte exportiere eine Sicherung.' : 'Speichern fehlgeschlagen: ' + (e && e.message));
@@ -215,37 +229,12 @@
     liste.forEach(f => { f._such = norm(f.n + ' ' + f.m + ' ' + f.t + ' ' + f.l); });
   }
 
-  // Wandelt die rohen Tabellenzeilen von forza.net in das Listenformat
-  function konvertiereRoh(rows) {
-    if (!Array.isArray(rows) || !rows.length) throw new Error('Keine Zeilen gefunden.');
-    const ids = new Set();
-    const out = rows.map((r, i) => {
-      if (!Array.isArray(r) || r.length < 6) throw new Error('Zeile ' + (i + 1) + ' hat ein unerwartetes Format.');
-      const [m, n, t, cls, co, b, a] = r;
-      const mm = String(cls).match(/(\d{3})\s*(S1|S2|[DCBARX])/);
-      const pi = mm ? Number(mm[1]) : null;
-      let id = slug(n); while (ids.has(id)) id += '-2'; ids.add(id);
-      const e = { id, m, n, j: Number(String(n).slice(0, 4)) || null, t, pi, k: mm ? mm[2] : klasseVonPi(pi), l: LAENDER[co] || co, b: String(b || '').split(',').map(x => x.trim()).filter(Boolean).map(x => BEZUG[x] || x) };
-      if (a) e.a = a;
-      return e;
-    });
-    return { quelle: 'forza.net/fh6cars', stand: new Date().toISOString().slice(0, 10), fahrzeuge: out };
-  }
-
+  /* Die Fahrzeugliste kommt nur noch aus dem Repo (data/fahrzeuge.json). Eine früher über die Konsole
+     selbst aktualisierte Liste (IndexedDB „fahrzeugliste“ bzw. localStorage „fh6garage.fahrzeugliste“)
+     würde Repo-Updates dauerhaft verdecken und wird deshalb verworfen. */
   async function ladeListe() {
-    let eigene = null;
-    if (speicherArt === 'idb') {
-      try {
-        eigene = await idb('get', 'fahrzeugliste');
-        const alt = lies(K_LISTE);
-        if (!eigene && alt && Array.isArray(alt.fahrzeuge)) { await idb('put', 'fahrzeugliste', alt); eigene = alt; }
-        if (alt && await idb('get', 'fahrzeugliste')) localStorage.removeItem(K_LISTE);
-      } catch (e) { zeigeFehler('Aktualisierte Fahrzeugliste konnte nicht gelesen werden: ' + e.message); }
-    } else eigene = lies(K_LISTE);
-    if (eigene && Array.isArray(eigene.fahrzeuge) && eigene.fahrzeuge.length) {
-      setzeListe(eigene, 'aktualisiert');
-      return;
-    }
+    try { if (speicherArt === 'idb') await idb('del', 'fahrzeugliste'); } catch (_) { /* egal */ }
+    try { localStorage.removeItem(K_LISTE); } catch (_) { /* egal */ }
     try {
       const r = await fetch('data/fahrzeuge.json', { cache: 'no-cache' });
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -513,18 +502,29 @@
     let html = '';
     if (!irgendwas) html = '<p class="leer">Wähle mindestens eine Vorgabe, z. B. Klasse und Typ.</p>';
     else {
-      const kandidaten = daten.eintraege.filter(x => passtA(autoVon(x)) && (!v.antrieb || x.antrieb === v.antrieb) && (!v.reifen || x.reifen === v.reifen));
+      // Fehlt bei einem Eintrag Antrieb bzw. Reifen (z. B. per Screenshot erfasst), wird er nicht ausgeblendet,
+      // sondern getrennt als „nicht eingetragen“ gezeigt.
+      const passtFeld = (x, k) => !v[k] || x[k] === v[k];
+      const unbekanntFeld = (x, k) => v[k] && !x[k];
+      const kandidaten = daten.eintraege.filter(x => passtA(autoVon(x)) && (passtFeld(x, 'antrieb') || unbekanntFeld(x, 'antrieb')) && (passtFeld(x, 'reifen') || unbekanntFeld(x, 'reifen')));
+      const unklar = x => unbekanntFeld(x, 'antrieb') || unbekanntFeld(x, 'reifen');
       const sortiert = arr => arr.sort(nachWert(v.sort || 'a100'));
-      const direkt = sortiert(kandidaten.filter(x => kIdx < 0 || klasseVon(x) === v.klasse));
-      const hoch = kIdx < 0 ? [] : sortiert(kandidaten.filter(x => KLASSEN.indexOf(klasseVon(x)) < kIdx && KLASSEN.indexOf(klasseVon(x)) >= 0));
+      const inKlasse = x => kIdx < 0 || klasseVon(x) === v.klasse;
+      const direkt = sortiert(kandidaten.filter(x => inKlasse(x) && !unklar(x)));
+      const direktUnklar = sortiert(kandidaten.filter(x => inKlasse(x) && unklar(x)));
+      // Hochrüsten: nur Modelle, von denen es noch keinen Build in der gesuchten Klasse gibt
+      const schonInKlasse = new Set(kIdx < 0 ? [] : daten.eintraege.filter(x => klasseVon(x) === v.klasse).map(x => x.autoId));
+      const hoch = kIdx < 0 ? [] : sortiert(kandidaten.filter(x => KLASSEN.indexOf(klasseVon(x)) < kIdx && KLASSEN.indexOf(klasseVon(x)) >= 0 && !schonInKlasse.has(x.autoId)));
+      const fehltText = [v.antrieb && 'Antrieb', v.reifen && 'Reifen'].filter(Boolean).join(' / ');
       const besessen = new Set(daten.eintraege.map(x => x.autoId));
       const kaufen = liste.filter(a => passtA(a) && !besessen.has(a.id) && (kIdx < 0 || KLASSEN.indexOf(a.k) <= kIdx))
         .sort((x, y) => (y.pi || 0) - (x.pi || 0));
       html = evBlock('In deiner Garage', v.klasse ? `aktuell Klasse ${v.klasse}` : '', direkt, 40, evZeile)
+        + evBlock(`Passt vermutlich – ${fehltText} nicht eingetragen`, 'Alles andere passt. Klick öffnet den Eintrag zum Ergänzen.', direktUnklar, 40, evZeile)
         + evBlock('Ließe sich hochrüsten', `passt sonst, ist aber unter ${v.klasse} – bräuchte einen weiteren Build`, hoch, 15, evZeile)
         + evBlock('Noch nicht in der Garage', (v.antrieb || v.reifen ? 'Antrieb und Reifen kann der Katalog nicht prüfen. ' : '') + (v.klasse ? `Serie in Klasse ${v.klasse} oder darunter` : ''), kaufen, 20, evKatalogZeile);
-      if (!direkt.length && !hoch.length && !kaufen.length) html = '<p class="leer">Kein Auto passt zu diesen Vorgaben.</p>';
-      else if (!direkt.length) html = `<p class="hinweis warnung">Kein Auto in deiner Garage passt direkt.</p>` + html;
+      if (!direkt.length && !direktUnklar.length && !hoch.length && !kaufen.length) html = '<p class="leer">Kein Auto passt zu diesen Vorgaben.</p>';
+      else if (!direkt.length && !direktUnklar.length) html = `<p class="hinweis warnung">Kein Auto in deiner Garage passt direkt.</p>` + html;
     }
     $('#evErgebnis').innerHTML = html;
     renderBestenliste();
@@ -568,6 +568,7 @@
   function render() {
     document.body.dataset.tab = ui.tab;
     $('#fReset').hidden = !filterAktiv();
+    if (f.klasse.options[0]) f.klasse.options[0].textContent = ui.tab === 'katalog' ? 'Alle Serienklassen' : 'Alle Klassen';
     $$('.tab').forEach(t => t.classList.toggle('aktiv', t.dataset.tab === ui.tab));
     $('#ansichtGarage').hidden = ui.tab !== 'garage';
     $('#ansichtKatalog').hidden = ui.tab !== 'katalog';
@@ -625,9 +626,10 @@
     if (!liste_.length) { box.hidden = true; box.innerHTML = ''; return; }
     const pi = zahl(e.pi.value);
     box.innerHTML = `<b>Schon in der Garage:</b> Speichern legt einen weiteren Build an – oder einen vorhandenen aktualisieren:`
-      + liste_.map(x => `<div class="vh-zeile${pi != null && x.pi === pi ? ' gleich' : ''}">
-          <span>${esc(buildName(x))} ${x.pi != null ? badge(x.pi) : ''}${pi != null && x.pi === pi ? ' <small>gleicher PI</small>' : ''}</span>
-          <button type="button" class="btn klein" data-uebernehmen="${esc(x.uid)}">Diesen aktualisieren</button></div>`).join('');
+      + liste_.map(x => { const gp = pi != null && x.pi === pi, gk = !gp && pi != null && x.pi != null && klasseVonPi(x.pi) === klasseVonPi(pi);
+        return `<div class="vh-zeile${gp || gk ? ' gleich' : ''}">
+          <span>${esc(buildName(x))} ${x.pi != null ? badge(x.pi) : ''}${gp ? ' <small>gleicher PI</small>' : gk ? ' <small>gleiche Klasse</small>' : ''}</span>
+          <button type="button" class="btn klein" data-uebernehmen="${esc(x.uid)}">Diesen aktualisieren</button></div>`; }).join('');
     box.hidden = false;
   }
   e.vorhanden.addEventListener('click', ev => {
@@ -752,7 +754,8 @@
     const jetzt = new Date().toISOString();
     if (bearbeitet) {
       const i = daten.eintraege.findIndex(x => x.uid === bearbeitet);
-      daten.eintraege[i] = kompakt(Object.assign({}, daten.eintraege[i], r, { geaendert: jetzt }));
+      if (i >= 0) daten.eintraege[i] = kompakt(Object.assign({}, daten.eintraege[i], r, { geaendert: jetzt }));
+      else daten.eintraege.push(kompakt(Object.assign({ uid: bearbeitet, erstellt: jetzt, geaendert: jetzt }, r)));   // inzwischen in anderem Tab/Gerät gelöscht
     } else {
       daten.eintraege.push(kompakt(Object.assign({ uid: uid(), erstellt: jetzt, geaendert: jetzt }, r)));
     }
@@ -798,7 +801,7 @@
     return skripte[url];
   }
   const ladeTesseract = () => ladeSkript(TESS_URL, () => !!window.Tesseract);
-  const OCR_VERSION = '20261104e';
+  const OCR_VERSION = '20261111';   // bei Änderungen an der Erkennung mit hochsetzen
   async function holeWorker() {
     await ladeTesseract();
     if (!worker) worker = await Tesseract.createWorker(['deu', 'eng'], 1, {
@@ -988,29 +991,28 @@
   // Liest Name, Werte und PI aus dem Bild
   async function leseBild(w, r, pruef) {
     const FELDER = ['pi', 'vmax', 'a100', 'kw', 'kg', 'nm'];
-    let werte = {}, roh = pruef.info, autoText = '';
+    let werte = {}, roh = pruef.info, autoText = '', unsicher = [];
+    let tuning = false;   // Tuning-Bildschirm: Werte nur aus „Neu“, Lücken bleiben leer (kein Rückgriff auf „Vorheriger“)
     // 1. Tuning-/Upgrade-Bildschirm (16:9): feste Bereiche einzeln lesen – deutlich zuverlässiger
     const seite = r.width / r.height;
     if (seite > 1.6 && seite < 1.9) {
       ocrMelder('Lese Fahrzeugwerte …');
-      const cN = ausschnitt(r, 0.06, 0.23, 0.29, 0.31, 2), cW = ausschnitt(r, 0.62, 0.22, 0.94, 0.72, 2), cP = ausschnitt(r, 0.48, 0.64, 0.545, 0.69, 3);
+      tuning = true;
+      const cN = ausschnitt(r, 0.06, 0.23, 0.29, 0.31, 2), cP = ausschnitt(r, 0.48, 0.64, 0.545, 0.69, 3);
+      // Spalte „Neu“ allein lesen: „Neu“ ist der Stand mit angewendetem Tuning (im Spiel nachgeprüft,
+      // Corvette ZR-1: Vorheriger 210 km/h, Neu 317 km/h, gefahren > 300 km/h). Zuordnung über die Einheit.
+      const cNeu = ausschnitt(r, 0.856, 0.22, 0.94, 0.72, 2);
       const name = await ocrLies(w, cN);
-      const stats = await ocrLies(w, cW);
+      const neuText = await ocrLies(w, cNeu, '6');
       const piNeu = await ocrLies(w, cP, '7');   // Abzeichen „Neu“
       const pz = c => Math.round(c.tinte * 1000) / 10 + ' %';
-      werte = werteAusText(stats);
-      delete werte.pi;
-      // Spalte „Neu“ allein lesen und bevorzugen: „Neu“ ist der Stand mit angewendetem Tuning (im Spiel
-      // nachgeprüft, Corvette ZR-1: Vorheriger 210 km/h, Neu 317 km/h, gefahren > 300 km/h).
-      // Zuordnung über die Einheit, nicht die Reihenfolge.
-      const cNeu = ausschnitt(r, 0.856, 0.22, 0.94, 0.72, 2);
-      const neuText = await ocrLies(w, cNeu, '6');
       const wNeu = werteAusText(neuText);
       for (const k of ['vmax', 'a100', 'kw', 'kg', 'nm']) if (wNeu[k] != null) werte[k] = wNeu[k];
       const pm = [...piNeu.matchAll(/(?:S1|S2|[DCBARX])?\s*(\d{3})(?!\d)/g)].pop();
       if (pm && +pm[1] >= 100 && +pm[1] <= 999) werte.pi = Number(pm[1]);
+      unsicher = FELDER.filter(k => werte[k] == null);
       autoText = name;
-      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Werte ${pz(cW)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Werte]\n${stats.trim()}\n\n[Spalte Neu]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
+      roh += `\nSchrift-Anteil: Name ${pz(cN)} · Neu ${pz(cNeu)} · PI ${pz(cP)}\n\n[Name]\n${name.trim()}\n\n[Spalte Neu]\n${neuText.trim()}\n\n[PI neu]\n${piNeu.trim()}`;
     }
     // 1b. Name nicht erkannt (z. B. graue Schrift auf hellem/farbigem Hintergrund): Namensbereich nochmal
     //     als Textblock (psm 6) und als lose Wörter (psm 11) lesen – erst danach das ganze Bild.
@@ -1025,16 +1027,17 @@
         if (autoAusText(autoText)) break;
       }
     }
-    // 2. Rückfallweg: ganzes Bild lesen und nur fehlende Werte (oder den Namen) ergänzen
-    if (FELDER.some(k => werte[k] == null) || !autoAusText(autoText)) {
+    // 2. Rückfallweg: ganzes Bild lesen. Beim Tuning-Bildschirm nur für den Namen – fehlende Werte bleiben leer
+    //    und werden als „unsicher“ markiert, weil das ganze Bild auch die Spalte „Vorheriger“ enthält.
+    if ((!tuning && FELDER.some(k => werte[k] == null)) || !autoAusText(autoText)) {
       ocrMelder('Lese ganzes Bild …');
       const ganz = await ocrLies(w, aufbereiten(r));
       const w2 = werteAusText(ganz);
-      for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
+      if (!tuning) for (const [k, v] of Object.entries(w2)) if (werte[k] == null && v != null) werte[k] = v;
       if (!autoText || !autoAusText(autoText)) autoText = (autoText + '\n' + ganz);
       roh += '\n\n[Ganzes Bild]\n' + ganz.trim();
     }
-    return { werte, roh, autoText };
+    return { werte, roh, autoText, unsicher };
   }
 
   /* Liest einen Screenshot komplett: Bild prüfen, Werte und Fahrzeug erkennen.
@@ -1051,8 +1054,8 @@
       const r = await rasterAusDatei(datei, bmp);
       const pruef = bildPruefen(r);
       if (pruef.fehler) return { fehler: pruef.fehler, roh: `Version ${OCR_VERSION}\n` + pruef.info, bmp };
-      const { werte, roh, autoText } = await leseBild(w, r, pruef);
-      return { werte, auto: autoAusText(autoText), roh: `Version ${OCR_VERSION}\n` + roh, bmp };
+      const { werte, roh, autoText, unsicher } = await leseBild(w, r, pruef);
+      return { werte, unsicher, auto: autoAusText(autoText), roh: `Version ${OCR_VERSION}\n` + roh, bmp };
     });
     ocrKette = job.catch(() => {});
     return job;
@@ -1067,7 +1070,8 @@
       if (erg.roh) { ocr.roh.hidden = false; $('pre', ocr.roh).textContent = erg.roh; }
       if (erg.fehler) { ocrStatus(erg.fehler, 'fehl'); return; }
       const gefuellt = [];
-      $$('.ocr-gefuellt', dlg).forEach(x => x.classList.remove('ocr-gefuellt'));
+      $$('.ocr-gefuellt, .ocr-unsicher', dlg).forEach(x => x.classList.remove('ocr-gefuellt', 'ocr-unsicher'));
+      for (const k of erg.unsicher || []) if (e[k] && e[k].value === '') e[k].classList.add('ocr-unsicher');
       for (const [k, v] of Object.entries(erg.werte)) {
         if (v == null || !e[k]) continue;
         e[k].value = v; e[k].classList.add('ocr-gefuellt'); gefuellt.push(k);
@@ -1076,7 +1080,9 @@
       if (!gewaehlt && !eigenesModus && erg.auto) { waehleAuto(erg.auto); gefuellt.push('Fahrzeug'); }
       else zeigeVorhanden();
       const namen = { pi: 'PI', vmax: 'Höchstgeschw.', a100: '0–100', kw: 'Leistung', kg: 'Gewicht', nm: 'Drehmoment', antrieb: 'Antrieb' };
-      if (gefuellt.length) ocrStatus('Erkannt: ' + gefuellt.map(k => namen[k] || k).join(', ') + ' – bitte grün markierte Felder prüfen.', 'ok');
+      const fehlt = (erg.unsicher || []).map(k => namen[k] || k);
+      if (gefuellt.length) ocrStatus('Erkannt: ' + gefuellt.map(k => namen[k] || k).join(', ') + ' – bitte grün markierte Felder prüfen.'
+        + (fehlt.length ? ' Nicht sicher lesbar (gelb, bitte selbst eintragen): ' + fehlt.join(', ') + '.' : ''), 'ok');
       else ocrStatus('Keine Werte erkannt. Unter „Erkannter Text“ siehst du, was gelesen wurde.', 'fehl');
     } catch (err) {
       ocrStatus('Texterkennung fehlgeschlagen: ' + err.message, 'fehl');
@@ -1092,6 +1098,8 @@
     const item = [...(ev.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
     if (item) { ev.preventDefault(); verarbeiteBild(item.getAsFile()); }
   });
+
+  document.addEventListener('input', ev => { if (ev.target.classList && ev.target.classList.contains('ocr-unsicher') && ev.target.value !== '') ev.target.classList.remove('ocr-unsicher'); });
 
   /* ---------- Screenshot groß anzeigen (Klick aufs Bild, Klick daneben oder Esc schließt) ---------- */
   const dlgB = $('#dlgBild');
@@ -1116,8 +1124,10 @@
   // Vorschlag: gleiches Auto mit gleichem PI schon vorhanden → diesen Eintrag aktualisieren, sonst neuer Build
   function vorschlagAktion(d) {
     if (!d.autoId) return 'neu';
-    const vh = vorhandeneZu(d.autoId);
-    const gleich = vh.find(x => d.werte && d.werte.pi != null && x.pi === d.werte.pi);
+    // Gleicher PI → diesen Eintrag; sonst gleiche Klasse → diesen (pro Marke/Typ soll jede Klasse nur einmal vorkommen)
+    const vh = vorhandeneZu(d.autoId), pi = d.werte && d.werte.pi;
+    if (pi == null) return 'neu';
+    const gleich = vh.find(x => x.pi === pi) || vh.find(x => x.pi != null && klasseVonPi(x.pi) === klasseVonPi(pi));
     return gleich ? gleich.uid : 'neu';
   }
   function entwurfHtml(d) {
@@ -1136,11 +1146,11 @@
           ${kopf}
           <button type="button" class="btn klein ew-weg" title="Entwurf entfernen">✕</button>
         </div>
-        ${fertig ? `<div class="ew-werte">${WERTSPALTEN.map(([k, l, st]) => `<label>${l}<input type="number" step="${st}" data-k="${k}" value="${d.werte[k] ?? ''}"></label>`).join('')}</div>
+        ${fertig ? `<div class="ew-werte">${WERTSPALTEN.map(([k, l, st]) => `<label>${l}<input type="number" step="${st}" data-k="${k}" value="${d.werte[k] ?? ''}"${d.werte[k] == null && (d.unsicher || []).includes(k) ? ' class="ocr-unsicher" title="Nicht sicher lesbar – bitte selbst eintragen"' : ''}></label>`).join('')}</div>
         <div class="ew-zeile">
           <select class="ew-aktion">
             <option value="neu"${d.aktion === 'neu' ? ' selected' : ''}>${vh.length ? 'Als neuen Build anlegen' : 'Neu in die Garage'}</option>
-            ${vh.map(x => `<option value="${esc(x.uid)}"${d.aktion === x.uid ? ' selected' : ''}>Aktualisieren: ${esc(buildName(x))}${x.pi != null ? ' (PI ' + x.pi + ')' : ''}</option>`).join('')}
+            ${vh.map(x => `<option value="${esc(x.uid)}"${d.aktion === x.uid ? ' selected' : ''}>Aktualisieren: ${esc(buildName(x))}${x.pi != null ? ' (PI ' + x.pi + (d.werte.pi != null && x.pi !== d.werte.pi && klasseVonPi(x.pi) === klasseVonPi(d.werte.pi) ? ', gleiche Klasse' : '') + ')' : ''}</option>`).join('')}
             <option value="skip"${d.aktion === 'skip' ? ' selected' : ''}>Nicht übernehmen</option>
           </select>
           ${vh.length ? `<span class="hinweis">${vh.length === 1 ? 'Schon 1 Eintrag' : 'Schon ' + vh.length + ' Einträge'} in der Garage</span>` : ''}
@@ -1187,7 +1197,7 @@
           const erg = await erkenneBild(d.datei, t => { d.meldung = t; const el = $(`#stapelListe .entwurf[data-id="${d.id}"] .leise`); if (el) el.textContent = t; });
           if (!entwuerfe.includes(d)) continue;   // inzwischen entfernt
           if (erg.fehler) { d.status = 'fehler'; d.meldung = erg.fehler; }
-          else { d.status = 'fertig'; d.werte = erg.werte || {}; d.autoId = erg.auto ? erg.auto.id : null; d.roh = erg.roh; d.aktion = vorschlagAktion(d); }
+          else { d.status = 'fertig'; d.werte = erg.werte || {}; d.unsicher = erg.unsicher || []; d.autoId = erg.auto ? erg.auto.id : null; d.roh = erg.roh; d.aktion = vorschlagAktion(d); }
         } catch (err) { d.status = 'fehler'; d.meldung = 'Texterkennung fehlgeschlagen: ' + err.message; }
         renderEntwurf(d);
       }
@@ -1326,7 +1336,7 @@
     if (speicherArt === 'idb' && navigator.storage && navigator.storage.persisted) {
       navigator.storage.persisted().then(p => { $('#speicherInfo').textContent += ` Dauerhaft geschützt: ${p ? 'ja' : 'nein'}.`; }).catch(() => {});
     }
-    $('#listeInfo').textContent = `${liste.length} Fahrzeuge · Stand ${listeMeta.stand || '?'} · ${listeMeta.herkunft === 'aktualisiert' ? 'selbst aktualisiert' : 'mitgeliefert'} (Quelle: ${listeMeta.quelle || '–'})`;
+    $('#listeInfo').textContent = `${liste.length} Fahrzeuge · Stand ${listeMeta.stand || '?'} (Quelle: ${listeMeta.quelle || '–'}). Neue Autos (z. B. Car Pass) werden im Repo nachgetragen.`;
   }
   $('#btnEinst').addEventListener('click', () => {
     speicherInfo();
@@ -1370,30 +1380,6 @@
       } else return;
       if (await speichern()) { fuelleFilter(); render(); speicherInfo(); toast('Import abgeschlossen'); }
     }, { once: true });
-  });
-
-  $('#btnSnippet').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText($('#snippet').textContent); toast('Kopiert'); }
-    catch (_) { toast('Kopieren nicht möglich – bitte manuell markieren'); }
-  });
-  $('#btnListeUebernehmen').addEventListener('click', async () => {
-    try {
-      const neu = konvertiereRoh(JSON.parse($('#listeEingabe').value.trim()));
-      if (neu.fahrzeuge.length < 100) throw new Error('Nur ' + neu.fahrzeuge.length + ' Fahrzeuge – war die Tabelle vollständig geladen?');
-      const vorher = liste.length;
-      const roh = { quelle: neu.quelle, stand: neu.stand, fahrzeuge: neu.fahrzeuge.map(({ _such, ...r }) => r) };
-      if (speicherArt === 'idb') await idb('put', 'fahrzeugliste', roh);
-      else if (!schreib(K_LISTE, roh)) return;
-      setzeListe(neu, 'aktualisiert');
-      $('#listeEingabe').value = '';
-      fuelleFilter(); render(); speicherInfo();
-      toast(`Liste übernommen: ${neu.fahrzeuge.length} Fahrzeuge (${neu.fahrzeuge.length - vorher >= 0 ? '+' : ''}${neu.fahrzeuge.length - vorher})`);
-    } catch (err) { zeigeFehler('Liste konnte nicht übernommen werden: ' + err.message); }
-  });
-  $('#btnListeReset').addEventListener('click', async () => {
-    try { if (speicherArt === 'idb') await idb('del', 'fahrzeugliste'); else localStorage.removeItem(K_LISTE); }
-    catch (e) { zeigeFehler('Zurücksetzen fehlgeschlagen: ' + e.message); return; }
-    await ladeListe(); fuelleFilter(); render(); speicherInfo(); toast('Mitgelieferte Liste aktiv');
   });
 
   /* ---------- Ereignisse Hauptansicht ---------- */

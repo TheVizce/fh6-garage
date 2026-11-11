@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261106f">
+<link rel="stylesheet" href="style.css?v=20261111">
 </head>
 <body>
 <header class="kopf">
@@ -276,22 +276,6 @@
 
     <h3>Fahrzeugliste</h3>
     <p class="hinweis" id="listeInfo"></p>
-    <details>
-      <summary>Liste aus forza.net aktualisieren (neue Car-Pass-Autos usw.)</summary>
-      <ol class="schritte">
-        <li>Öffne <a href="https://forza.net/fh6cars" target="_blank" rel="noopener">forza.net/fh6cars</a> und warte, bis die Tabelle geladen ist.</li>
-        <li>Drücke <kbd>F12</kbd> → Reiter <b>Konsole</b>, füge diese Zeile ein und drücke Enter (Chrome fragt beim ersten Mal ggf., ob Einfügen erlaubt ist, dann <code>allow pasting</code> tippen):
-          <pre id="snippet">copy(JSON.stringify([...document.querySelectorAll('table tbody tr')].map(r=>[...r.cells].map(c=>c.textContent.trim()))))</pre>
-          <button id="btnSnippet" class="btn klein">Zeile kopieren</button>
-        </li>
-        <li>Die Liste ist jetzt in der Zwischenablage. Hier einfügen und übernehmen:</li>
-      </ol>
-      <textarea id="listeEingabe" rows="3" placeholder="Hier einfügen (Strg+V)"></textarea>
-      <div class="zeile">
-        <button id="btnListeUebernehmen" class="btn primaer">Liste übernehmen</button>
-        <button id="btnListeReset" class="btn">Auf mitgelieferte Liste zurücksetzen</button>
-      </div>
-    </details>
   </div>
 </dialog>
 
@@ -334,6 +318,6 @@
 
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261106f"></script>
+<script src="app.js?v=20261111"></script>
 </body>
 </html>

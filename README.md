@@ -1,11 +1,13 @@
 # FH6 Garage
 
-Eigene Fahrzeugsammlung aus Forza Horizon 6 verwalten: Werte nach Upgrade/Tuning so festhalten, wie das Spiel sie anzeigt.
+Eigene Fahrzeugsammlung aus Forza Horizon 6 verwalten, mit den Werten nach Upgrade und Tuning, wie das Spiel sie anzeigt.
 
-- **Katalog:** 667 Fahrzeuge von forza.net/fh6cars mit Marke, Jahr, Land, Typ, Klasse/PI ab Werk und Bezugsweg
-- **Garage:** pro Eintrag PI nach Upgrade (Klasse wird daraus berechnet), Höchstgeschwindigkeit, 0–100, Reifen, Antrieb, PS, Gewicht, Drehmoment, Tune-Sharecode, Notiz, Favorit. Dasselbe Auto kann mehrfach als Build angelegt werden.
-- **Screenshot einlesen:** Statistik-Screenshot ins Formular ziehen oder mit Strg+V einfügen. Die Texterkennung läuft lokal im Browser (Tesseract.js) und füllt die Felder vor. Die Werte bitte prüfen.
-- **Speicher:** localStorage unter `fh6garage.*`, mit JSON-Export und -Import unter ⚙.
+- **Garage:** pro Eintrag PI nach Upgrade (Klasse wird berechnet), Höchstgeschwindigkeit, 0–100, Leistung (kW), Drehmoment, Gewicht, Reifen, Antrieb, Build-Name, Design, Tune-Sharecode, Notiz, Favorit. Ein Auto kann mehrere Builds haben.
+- **Katalog:** alle Fahrzeuge von forza.net/fh6cars (`data/fahrzeuge.json`) mit Marke, Jahr, Land, Typ, Serienklasse und Bezugsweg, dazu das Häkchen für Horizon Promo.
+- **Abdeckung:** Matrix Marke × Typ × PI-Klasse (doppelte Klassen markiert), Abdeckung nach Marken und Typen.
+- **Rennen:** Event-Finder nach Vorgaben, Bestenliste pro Klasse (Straße, Rally, Offroad, Drift).
+- **Screenshots einlesen:** einzeln im Dialog oder mehrere bzw. ein ganzer Ordner über „⇪ Screenshots“. Die Texterkennung läuft lokal im Browser (Tesseract.js) und liest die Spalte „Neu“ des Tuning-Bildschirms. Unsichere Felder bleiben leer und sind gelb markiert.
+- **Speicher:** eigene IndexedDB `fh6-garage`, im localStorage nur die Ansicht (`fh6garage.ui`). JSON-Export und -Import unter ⚙, Abgleich über den gemeinsamen Sync der Startseite (`fh6-garage.json` in `tool-daten`).
 
 ## Dateien
 ```
@@ -16,4 +18,4 @@ data/fahrzeuge.json
 ```
 
 ## Fahrzeugliste aktualisieren
-Unter ⚙ → „Liste aus forza.net aktualisieren“ steht eine Zeile für die Browser-Konsole. Sie kopiert die aktuelle Tabelle von forza.net/fh6cars, die man dann im Tool einfügt.
+Neue Autos (z. B. Car Pass) werden direkt in `data/fahrzeuge.json` im Repo nachgetragen.

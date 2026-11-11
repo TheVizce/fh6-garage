@@ -186,9 +186,6 @@ td.leer-wert { color: var(--linie); }
 pre { background: #0d0b12; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
 kbd { background: var(--flaeche2); border: 1px solid var(--linie); border-radius: 4px; padding: 0 5px; font-size: 12px; }
 details summary { cursor: pointer; color: var(--text); }
-.schritte { padding-left: 20px; }
-.schritte li { margin-bottom: 8px; }
-textarea#listeEingabe { width: 100%; }
 
 .toast {
   position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 50;
@@ -374,3 +371,4 @@ table.vergleich { border-collapse: collapse; width: 100%; font-size: 14px; }
 
 .filter-reset { color: var(--akzent); border-color: rgba(255,46,136,.5); background: transparent; }
 .filter-reset[hidden] { display: none; }
+.ocr-unsicher { outline: 2px solid #f2bd2f !important; outline-offset: -1px; }
