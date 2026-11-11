@@ -335,7 +335,7 @@
         <td class="mob-weg leise">${esc(a.t || '')}</td>
         <td class="mob-weg">${badge(a.pi, a.k)}</td>
         <td class="klassen">${e.pi != null ? badge(e.pi) : '<span class="leise">–</span>'}</td>
-        ${z(e.vmax, 0, 'km/h')}${z(e.a100, e.a100 != null && e.a100 < 10 ? 2 : 1, '0–100 s')}${z(e.kw, 0, 'kW')}${z(e.kg, 0, 'kg')}
+        ${z(e.vmax, 0, 'km/h')}${z(e.a100, e.a100 != null && e.a100 < 10 ? 2 : 1, '0–100 s')}${z(e.kw, 0, 'kW')}${z(e.nm, 0, 'N·m')}${z(e.kg, 0, 'kg')}
         <td ${e.reifen ? 'data-l="Reifen"' : 'class="leer-wert"'}>${esc(e.reifen || '–')}</td>
         <td ${e.antrieb ? 'data-l="Antrieb"' : 'class="leer-wert"'}>${esc(e.antrieb || '–')}</td>
       </tr>`;
