@@ -1115,7 +1115,7 @@
   const dlgS = $('#dlgStapel');
   let entwuerfe = [];   // { id, datei, url, status: 'wartet'|'liest'|'fertig'|'fehler', meldung, werte, autoId, aktion, roh }
   let stapelLaeuft = false;
-  const WERTSPALTEN = [['pi', 'PI', 1], ['vmax', 'km/h', 0.1], ['a100', '0–100 s', 0.001], ['kw', 'kW', 1], ['kg', 'kg', 1], ['nm', 'Nm', 1]];
+  const WERTSPALTEN = [['pi', 'PI', 1], ['vmax', 'km/h', 0.1], ['a100', '0–100 s', 0.001], ['kw', 'kW', 1], ['nm', 'N·m', 1], ['kg', 'kg', 1]];   // Reihenfolge wie im Spiel
 
   function fuelleAutoDatalist() {
     if ($('#stapelAutos').childElementCount) return;

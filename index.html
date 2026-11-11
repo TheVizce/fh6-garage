@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261111">
+<link rel="stylesheet" href="style.css?v=20261111b">
 </head>
 <body>
 <header class="kopf">
@@ -199,14 +199,19 @@
         <div class="feld"><label for="ePi">PI nach Upgrade</label>
           <div class="mit-badge"><input id="ePi" type="number" min="100" max="999" inputmode="numeric"><span id="ePiBadge" class="badge"></span></div>
         </div>
-        <div class="feld"><label for="eVmax">Höchstgeschw. <small>km/h</small></label><input id="eVmax" type="number" step="0.1" min="0" inputmode="decimal"></div>
-        <div class="feld"><label for="eA100">0–100 km/h <small>s</small></label><input id="eA100" type="number" step="0.001" min="0" inputmode="decimal"></div>
         <div class="feld"><label for="eReifen">Reifen</label><select id="eReifen"></select></div>
         <div class="feld"><label for="eAntrieb">Antrieb</label><select id="eAntrieb"></select></div>
-        <div class="feld"><label for="eKw">Leistung <small>kW</small></label><input id="eKw" type="number" min="0" inputmode="numeric"></div>
-        <div class="feld"><label for="eKg">Gewicht <small>kg</small></label><input id="eKg" type="number" min="0" inputmode="numeric"></div>
-        <div class="feld"><label for="eNm">Drehmoment <small>Nm</small></label><input id="eNm" type="number" min="0" inputmode="numeric"></div>
         <div class="feld"><label for="eCode">Tune-Sharecode</label><input id="eCode" inputmode="numeric"></div>
+
+        <!-- Werte wie in der Autostatistik im Spiel: untereinander, gleiche Reihenfolge -->
+        <div class="feld voll autostatistik">
+          <span class="as-titel">Autostatistik</span>
+          <label class="as-zeile" for="eVmax"><span>Höchst&shy;geschwindigkeit</span><input id="eVmax" type="number" step="0.1" min="0" inputmode="decimal"><small>km/h</small></label>
+          <label class="as-zeile" for="eA100"><span>0–100 km/h</span><input id="eA100" type="number" step="0.001" min="0" inputmode="decimal"><small>Sek.</small></label>
+          <label class="as-zeile" for="eKw"><span>Leistung</span><input id="eKw" type="number" min="0" inputmode="numeric"><small>kW</small></label>
+          <label class="as-zeile" for="eNm"><span>Drehmoment</span><input id="eNm" type="number" min="0" inputmode="numeric"><small>N·m</small></label>
+          <label class="as-zeile" for="eKg"><span>Gewicht</span><input id="eKg" type="number" min="0" inputmode="numeric"><small>kg</small></label>
+        </div>
         <div class="feld voll"><label for="eNotiz">Notiz</label><textarea id="eNotiz" rows="2"></textarea></div>
         <label class="chk"><input id="eFav" type="checkbox"> ★ Favorit</label>
         <label class="chk" id="ePromoWrap" hidden><input id="ePromo" type="checkbox"> 📷 Für Horizon Promo fotografiert</label>
@@ -318,6 +323,6 @@
 
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261111"></script>
+<script src="app.js?v=20261111b"></script>
 </body>
 </html>

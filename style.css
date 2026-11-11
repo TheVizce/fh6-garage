@@ -372,3 +372,18 @@ table.vergleich { border-collapse: collapse; width: 100%; font-size: 14px; }
 .filter-reset { color: var(--akzent); border-color: rgba(255,46,136,.5); background: transparent; }
 .filter-reset[hidden] { display: none; }
 .ocr-unsicher { outline: 2px solid #f2bd2f !important; outline-offset: -1px; }
+
+/* Autostatistik im Bearbeiten-Dialog: wie im Spiel untereinander */
+.autostatistik { gap: 0; padding: 8px 12px; border: 1px solid var(--linie); border-radius: 10px; background: var(--flaeche2); max-width: 460px; }
+.as-titel { font-family: "Barlow Condensed", sans-serif; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--leise); font-size: 14px; margin-bottom: 4px; }
+.as-zeile { display: grid; grid-template-columns: 1fr 120px 44px; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--linie); }
+.as-zeile:first-of-type { border-top: 0; }
+.as-zeile span { color: var(--text); font-size: 15px; }
+.as-zeile input { text-align: right; font-variant-numeric: tabular-nums; }
+.as-zeile small { color: var(--leise); font-size: 13px; }
+.as-zeile { grid-template-columns: minmax(0, 1fr) 120px 44px; }
+.as-zeile span { overflow-wrap: normal; }
+@media (max-width: 760px) {
+  .as-zeile { grid-template-columns: minmax(0, 1fr) 96px 36px; gap: 8px; }
+  .as-zeile span { font-size: 14px; }
+}
