@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261111c">
+<link rel="stylesheet" href="style.css?v=20261111d">
 </head>
 <body>
 <header class="kopf">
@@ -125,6 +125,7 @@
         <label>Baujahr bis<input id="evBis" type="number" min="1900" max="2100" inputmode="numeric" placeholder="z. B. 1999"></label>
         <label>Antrieb<select id="evAntrieb"></select></label>
         <label>Reifen<select id="evReifen"></select></label>
+        <label>Aufhängung<select id="evAufh"></select></label>
         <label>Sortieren<select id="evSort">
           <option value="a100">0–100 (schnellste)</option>
           <option value="vmax">Höchstgeschw.</option>
@@ -201,6 +202,7 @@
         </div>
         <div class="feld"><label for="eReifen">Reifen</label><select id="eReifen"></select></div>
         <div class="feld"><label for="eAntrieb">Antrieb</label><select id="eAntrieb"></select></div>
+        <div class="feld"><label for="eAufh">Aufhängung</label><select id="eAufh"></select></div>
         <div class="feld"><label for="eCode">Tune-Sharecode</label><input id="eCode" inputmode="numeric"></div>
 
         <!-- Werte wie in der Autostatistik im Spiel: untereinander, gleiche Reihenfolge -->
@@ -323,6 +325,6 @@
 
 <div id="toast" class="toast" hidden></div>
 <script src="/startseite/sync-v1.js"></script>
-<script src="app.js?v=20261111c"></script>
+<script src="app.js?v=20261111d"></script>
 </body>
 </html>

@@ -17,6 +17,7 @@
   const KLASSEN = ['D', 'C', 'B', 'A', 'S1', 'S2', 'R', 'X'];
   const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage', 'Vintage-Rennreifen'];
   const ANTRIEB = ['FWD', 'RWD', 'AWD'];
+  const AUFHAENGUNG = ['Sport', 'Rennen', 'Rally', 'Offroad', 'Drift'];   // Begriffe wie im Spiel (Sport/Rennen gesehen, Rest vermutet)
 
   const SORT_GARAGE = [
     ['neu', 'Zuletzt bearbeitet'], ['spiel', 'Wie im Spiel (Marke, neueste zuerst)'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
@@ -302,7 +303,7 @@
     const tb = $('#tabGarage tbody');
     let arr = daten.eintraege.filter(e => {
       const a = autoVon(e);
-      if (!passtAuto(a, norm([e.build, e.design, e.notiz, e.reifen, e.antrieb, e.code].join(' ')))) return false;
+      if (!passtAuto(a, norm([e.build, e.design, e.notiz, e.reifen, e.antrieb, e.aufh, e.code].join(' ')))) return false;
       if (f.klasse.value && klasseVonPi(e.pi ?? a.pi) !== f.klasse.value) return false;
       if (f.reifen.value && e.reifen !== f.reifen.value) return false;
       if (f.antrieb.value && e.antrieb !== f.antrieb.value) return false;
@@ -456,14 +457,14 @@
   const kategorieVon = t => /Rally/.test(t || '') ? 'Rally'
     : /^(Buggies|Offroad|Pickups & 4x4's|UTV's|Unlimited Buggies|Unlimited Offroad)$/.test(t || '') ? 'Offroad'
     : t === 'Drift Cars' ? 'Drift' : 'Straße';
-  const EV_FELDER = ['klasse', 'typ', 'marke', 'land', 'von', 'bis', 'antrieb', 'reifen', 'sort'];
+  const EV_FELDER = ['klasse', 'typ', 'marke', 'land', 'von', 'bis', 'antrieb', 'reifen', 'aufh', 'sort'];
   ui.event = Object.assign({ sort: 'a100' }, ui.event || {});
   const ev = Object.fromEntries(EV_FELDER.map(k => [k, $('#ev' + k[0].toUpperCase() + k.slice(1))]));
   function fuelleEventFilter() {
     const autos = [...liste, ...daten.eintraege.map(x => x.auto || {})];
     const werte = s => [...new Set(autos.map(a => a[s]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
     optionen(ev.klasse, KLASSEN, 'egal'); optionen(ev.typ, werte('t'), 'egal'); optionen(ev.marke, werte('m'), 'egal');
-    optionen(ev.land, werte('l'), 'egal'); optionen(ev.antrieb, ANTRIEB, 'egal'); optionen(ev.reifen, REIFEN, 'egal');
+    optionen(ev.land, werte('l'), 'egal'); optionen(ev.antrieb, ANTRIEB, 'egal'); optionen(ev.reifen, REIFEN, 'egal'); optionen(ev.aufh, AUFHAENGUNG, 'egal');
     for (const k of EV_FELDER) if (ui.event[k] != null) ev[k].value = ui.event[k];
   }
   const nachWert = (feld) => feld === 'a100' ? (x, y) => (x.a100 ?? Infinity) - (y.a100 ?? Infinity)
@@ -476,7 +477,7 @@
       <span class="ev-name"><b>${nameHtml(a)}</b>${x.build ? ` <span class="build">${esc(x.build)}</span>` : ''}<small>${esc(a.t || '')}</small></span>
       <span>${badge(x.pi ?? a.pi, x.pi != null ? null : a.k)}</span>
       <span class="ev-werte">${w || '<span class="leise">keine Werte</span>'}</span>
-      <span class="ev-tags">${x.antrieb ? `<span class="tag">${esc(x.antrieb)}</span>` : ''}${x.reifen ? `<span class="tag">${esc(x.reifen)}</span>` : ''}</span>
+      <span class="ev-tags">${x.antrieb ? `<span class="tag">${esc(x.antrieb)}</span>` : ''}${x.reifen ? `<span class="tag">${esc(x.reifen)}</span>` : ''}${x.aufh ? `<span class="tag">${esc(x.aufh)}</span>` : ''}</span>
     </div>`;
   }
   function evKatalogZeile(a) {
@@ -502,12 +503,13 @@
     let html = '';
     if (!irgendwas) html = '<p class="leer">Wähle mindestens eine Vorgabe, z. B. Klasse und Typ.</p>';
     else {
-      // Fehlt bei einem Eintrag Antrieb bzw. Reifen (z. B. per Screenshot erfasst), wird er nicht ausgeblendet,
+      // Fehlt bei einem Eintrag Antrieb, Reifen bzw. Aufhängung (z. B. per Screenshot erfasst), wird er nicht ausgeblendet,
       // sondern getrennt als „nicht eingetragen“ gezeigt.
       const passtFeld = (x, k) => !v[k] || x[k] === v[k];
       const unbekanntFeld = (x, k) => v[k] && !x[k];
-      const kandidaten = daten.eintraege.filter(x => passtA(autoVon(x)) && (passtFeld(x, 'antrieb') || unbekanntFeld(x, 'antrieb')) && (passtFeld(x, 'reifen') || unbekanntFeld(x, 'reifen')));
-      const unklar = x => unbekanntFeld(x, 'antrieb') || unbekanntFeld(x, 'reifen');
+      const OFFEN = ['antrieb', 'reifen', 'aufh'];
+      const kandidaten = daten.eintraege.filter(x => passtA(autoVon(x)) && OFFEN.every(k => passtFeld(x, k) || unbekanntFeld(x, k)));
+      const unklar = x => OFFEN.some(k => unbekanntFeld(x, k));
       const sortiert = arr => arr.sort(nachWert(v.sort || 'a100'));
       const inKlasse = x => kIdx < 0 || klasseVon(x) === v.klasse;
       const direkt = sortiert(kandidaten.filter(x => inKlasse(x) && !unklar(x)));
@@ -515,14 +517,14 @@
       // Hochrüsten: nur Modelle, von denen es noch keinen Build in der gesuchten Klasse gibt
       const schonInKlasse = new Set(kIdx < 0 ? [] : daten.eintraege.filter(x => klasseVon(x) === v.klasse).map(x => x.autoId));
       const hoch = kIdx < 0 ? [] : sortiert(kandidaten.filter(x => KLASSEN.indexOf(klasseVon(x)) < kIdx && KLASSEN.indexOf(klasseVon(x)) >= 0 && !schonInKlasse.has(x.autoId)));
-      const fehltText = [v.antrieb && 'Antrieb', v.reifen && 'Reifen'].filter(Boolean).join(' / ');
+      const fehltText = [v.antrieb && 'Antrieb', v.reifen && 'Reifen', v.aufh && 'Aufhängung'].filter(Boolean).join(' / ');
       const besessen = new Set(daten.eintraege.map(x => x.autoId));
       const kaufen = liste.filter(a => passtA(a) && !besessen.has(a.id) && (kIdx < 0 || KLASSEN.indexOf(a.k) <= kIdx))
         .sort((x, y) => (y.pi || 0) - (x.pi || 0));
       html = evBlock('In deiner Garage', v.klasse ? `aktuell Klasse ${v.klasse}` : '', direkt, 40, evZeile)
         + evBlock(`Passt vermutlich – ${fehltText} nicht eingetragen`, 'Alles andere passt. Klick öffnet den Eintrag zum Ergänzen.', direktUnklar, 40, evZeile)
         + evBlock('Ließe sich hochrüsten', `passt sonst, ist aber unter ${v.klasse} – bräuchte einen weiteren Build`, hoch, 15, evZeile)
-        + evBlock('Noch nicht in der Garage', (v.antrieb || v.reifen ? 'Antrieb und Reifen kann der Katalog nicht prüfen. ' : '') + (v.klasse ? `Serie in Klasse ${v.klasse} oder darunter` : ''), kaufen, 20, evKatalogZeile);
+        + evBlock('Noch nicht in der Garage', (v.antrieb || v.reifen || v.aufh ? 'Antrieb, Reifen und Aufhängung kann der Katalog nicht prüfen. ' : '') + (v.klasse ? `Serie in Klasse ${v.klasse} oder darunter` : ''), kaufen, 20, evKatalogZeile);
       if (!direkt.length && !direktUnklar.length && !hoch.length && !kaufen.length) html = '<p class="leer">Kein Auto passt zu diesen Vorgaben.</p>';
       else if (!direkt.length && !direktUnklar.length) html = `<p class="hinweis warnung">Kein Auto in deiner Garage passt direkt.</p>` + html;
     }
@@ -592,12 +594,13 @@
   const e = {
     suche: $('#eAutoSuche'), treffer: $('#autoTreffer'), info: $('#eAutoInfo'), eigenesBtn: $('#eEigenesBtn'), eigenes: $('#eEigenes'),
     build: $('#eBuild'), design: $('#eDesign'), pi: $('#ePi'), piBadge: $('#ePiBadge'), vmax: $('#eVmax'), a100: $('#eA100'),
-    reifen: $('#eReifen'), antrieb: $('#eAntrieb'), kw: $('#eKw'), kg: $('#eKg'), nm: $('#eNm'),
+    reifen: $('#eReifen'), antrieb: $('#eAntrieb'), aufh: $('#eAufh'), kw: $('#eKw'), kg: $('#eKg'), nm: $('#eNm'),
     code: $('#eCode'), notiz: $('#eNotiz'), fav: $('#eFav'), promo: $('#ePromo'), promoWrap: $('#ePromoWrap'), vorhanden: $('#eVorhanden'),
     xMarke: $('#xMarke'), xName: $('#xName'), xLand: $('#xLand'), xTyp: $('#xTyp'), xPi: $('#xPi')
   };
   e.reifen.innerHTML = '<option value="">–</option>' + REIFEN.map(r => `<option>${r}</option>`).join('');
   e.antrieb.innerHTML = '<option value="">–</option>' + ANTRIEB.map(r => `<option>${r}</option>`).join('');
+  e.aufh.innerHTML = '<option value="">–</option>' + AUFHAENGUNG.map(r => `<option>${r}</option>`).join('');
 
   let bearbeitet = null;   // uid oder null
   let gewaehlt = null;     // Auto-Objekt aus der Liste
@@ -644,6 +647,7 @@
     if (!e.design.value) e.design.value = x.design || '';
     if (!e.reifen.value) e.reifen.value = x.reifen || '';
     if (!e.antrieb.value) e.antrieb.value = x.antrieb || '';
+    if (!e.aufh.value) e.aufh.value = x.aufh || '';
     if (!e.code.value) e.code.value = x.code || '';
     if (!e.notiz.value) e.notiz.value = x.notiz || '';
     if (!e.fav.checked) e.fav.checked = !!x.fav;
@@ -713,7 +717,7 @@
       e.build.value = eintrag.build || '';
       e.design.value = eintrag.design || '';
       ZAHLFELDER.forEach(k => { e[k].value = eintrag[k] ?? ''; });
-      e.reifen.value = eintrag.reifen || ''; e.antrieb.value = eintrag.antrieb || '';
+      e.reifen.value = eintrag.reifen || ''; e.antrieb.value = eintrag.antrieb || ''; e.aufh.value = eintrag.aufh || '';
       e.code.value = eintrag.code || ''; e.notiz.value = eintrag.notiz || ''; e.fav.checked = !!eintrag.fav;
     } else if (autoId && nachId.get(autoId)) {
       waehleAuto(nachId.get(autoId));
@@ -739,7 +743,7 @@
     }
     const r = {
       autoId, auto: snap, build: e.build.value.trim(), design: e.design.value.trim(),
-      reifen: e.reifen.value, antrieb: e.antrieb.value,
+      reifen: e.reifen.value, antrieb: e.antrieb.value, aufh: e.aufh.value,
       code: e.code.value.trim(), notiz: e.notiz.value.trim(), fav: e.fav.checked
     };
     ZAHLFELDER.forEach(k => { r[k] = zahl(e[k].value); });
@@ -1299,6 +1303,7 @@
       ['kW pro Tonne', x => (x.kw && x.kg) ? fmt(x.kw / x.kg * 1000, 0) : '–', 'kwt', 1],
       ['Reifen', x => esc(x.reifen || '–')],
       ['Antrieb', x => esc(x.antrieb || '–')],
+      ['Aufhängung', x => esc(x.aufh || '–')],
       ['Tune-Code', x => esc(x.code || '–')]
     ];
     const wert = (x, k) => k === 'kwt' ? ((x.kw && x.kg) ? x.kw / x.kg : null) : x[k];
