@@ -17,7 +17,7 @@
   const KLASSEN = ['D', 'C', 'B', 'A', 'S1', 'S2', 'R', 'X'];
   const REIFEN = ['Serie', 'Straße', 'Sport', 'Semi-Slick', 'Slick', 'Rallye', 'Offroad', 'Schnee', 'Drag', 'Drift', 'Vintage', 'Vintage-Rennreifen'];
   const ANTRIEB = ['FWD', 'RWD', 'AWD'];
-  const AUFHAENGUNG = ['Sport', 'Rennen', 'Rally', 'Offroad', 'Drift'];   // Begriffe wie im Spiel (Sport/Rennen gesehen, Rest vermutet)
+  const AUFHAENGUNG = ['Straße', 'Sport', 'Rennen', 'Rally', 'Offroad', 'Drift'];   // Begriffe wie im Spiel (Sport/Rennen gesehen, Rest vermutet)
 
   const SORT_GARAGE = [
     ['neu', 'Zuletzt bearbeitet'], ['spiel', 'Wie im Spiel (Marke, neueste zuerst)'], ['name', 'Marke & Modell A–Z'], ['jahr', 'Baujahr (alt → neu)'], ['pi', 'PI (hoch → niedrig)'],
